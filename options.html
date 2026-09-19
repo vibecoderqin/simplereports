@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>TS Reporter — Dashboard</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+
+  <div id="ctx-warning" class="ctx-warning" style="display:none">
+    <div class="ctx-warning-inner">
+      <strong>wrong context</strong>
+      <p>
+        this page is opened outside the extension, so it can't read
+        <code>chrome.storage</code>. that's why nothing syncs.
+      </p>
+      <p>
+        open the dashboard <b>from the panel</b> inside the incognito window
+        (button <b>open dashboard</b>), or right-click the extension icon →
+        <b>Options</b>. do <u>not</u> open this file from disk.
+      </p>
+      <p class="muted" id="ctx-warning-url"></p>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">🪱 TS Reporter · Dashboard</div>
+    <div class="actions">
+      <span class="pill" id="live-pill">live</span>
+      <button class="btn btn-ghost" id="btn-refresh">refresh</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+
+    <section class="card">
+      <div class="card-head">
+        <h2>progress</h2>
+        <span class="muted" id="progress-note">live</span>
+      </div>
+      <div class="card-body">
+        <div class="progress-grid">
+          <div class="stat"><span class="stat-label">cycle</span><span class="stat-val" id="p-cycle">0</span></div>
+          <div class="stat"><span class="stat-label">limit</span><span class="stat-val" id="p-limit">—</span></div>
+          <div class="stat"><span class="stat-label">variants used</span><span class="stat-val" id="p-used">0</span></div>
+          <div class="stat"><span class="stat-label">target</span><span class="stat-val" id="p-target">—</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>settings</h2>
+        <span class="muted" id="settings-note">synced with panel · saved automatically</span>
+      </div>
+      <div class="card-body">
+        <div class="grid">
+          <label class="field">
+            <span>content type</span>
+            <select id="s-content"></select>
+          </label>
+          <label class="field">
+            <span>reason (parent)</span>
+            <select id="s-reason"></select>
+          </label>
+          <label class="field">
+            <span>detailed reason</span>
+            <select id="s-subreason"><option value="">— none —</option></select>
+          </label>
+        </div>
+
+        <div class="grid">
+          <label class="field">
+            <span>delay min (ms)</span>
+            <input type="number" id="s-delay-min" min="0" step="50" />
+          </label>
+          <label class="field">
+            <span>delay max (ms)</span>
+            <input type="number" id="s-delay-max" min="0" step="50" />
+          </label>
+          <label class="field">
+            <span>timeout (ms)</span>
+            <input type="number" id="s-timeout" min="500" step="100" />
+          </label>
+          <label class="field">
+            <span>retries</span>
+            <input type="number" id="s-retries" min="1" max="20" step="1" />
+          </label>
+          <label class="field">
+            <span>cycles (1–999, 0 = ∞)</span>
+            <input type="number" id="s-cycles" min="0" max="999" step="1" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>complaint variants (each starts with $)</span>
+          <textarea id="s-details" rows="8" placeholder="$variant 1 …&#10;$variant 2 …&#10;$variant 3 (can span multiple lines)"></textarea>
+        </label>
+
+        <div class="row-buttons">
+          <button class="btn btn-danger" id="btn-reset-progress">reset progress</button>
+          <button class="btn btn-ghost" id="btn-reset-all">reset everything</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>debug log</h2>
+        <div class="actions">
+          <span class="muted" id="debug-count">0 lines</span>
+          <label class="check"><input type="checkbox" id="debug-autoscroll" checked /> autoscroll</label>
+          <button class="btn btn-ghost" id="btn-copy-debug">copy</button>
+          <button class="btn btn-danger" id="btn-clear-debug">clear</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <pre id="debug-log" class="log">(no logs yet)</pre>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>emails used</h2>
+        <div class="actions">
+          <span class="muted" id="emails-count">0 entries</span>
+          <button class="btn btn-ghost" id="btn-copy-emails">copy</button>
+          <button class="btn btn-danger" id="btn-clear-emails">clear</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <table class="table" id="emails-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>email</th>
+              <th>channel</th>
+              <th>reason</th>
+              <th>detailed</th>
+              <th>time</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>
