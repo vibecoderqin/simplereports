@@ -1,7 +1,6 @@
 (() => {
   "use strict";
 
-  // --- context guard -------------------------------------------------------
   const HAS_EXT =
     typeof chrome !== "undefined" &&
     chrome.storage &&
@@ -28,7 +27,6 @@
 
   if (!HAS_EXT) { showWrongContext(); return; }
 
-  // --- constants -----------------------------------------------------------
   const K_SETTINGS = "tsr_settings_v1";
   const K_PROGRESS = "tsr_progress_v1";
   const K_DEBUG    = "tsr_debug_v1";
@@ -45,14 +43,16 @@
     timeoutMs: 8000,
     maxRetries: 3,
     cycleLimit: 10,
-    reloadOnFail: true
+    reloadOnFail: true,
+    debug: true
   };
 
   const CONTENT_TYPES = [
     { label: "Chat Messages", slug: "CHAT_REPORT" },
     { label: "Whispers",      slug: "WHISPER_REPORT" },
     { label: "Username",      slug: "USERNAME_REPORT" },
-    { label: "User (Avatar, Channel Points, Panels, Tags, etc.)", slug: "USER_REPORT" }
+    { label: "User (Avatar, Channel Points, Panels, Tags, etc.)", slug: "USER_REPORT" },
+    { label: "Off Twitch Behavior", slug: "OFF_TWITCH_REPORT" }
   ];
 
   const REASONS = {
@@ -72,6 +72,7 @@
     "Nudity or Sexually Explicit": { slug: "nudity_sexual",
       subs: ["Sexually Explicit", "Sexual Violence", "Full or Partial Nudity",
              "Sexual Conduct Involving Minors", "Sharing Private Images"] },
+    "Off Twitch Behavior": { slug: "off_twitch_behavior", subs: [] },
     "Self-Harm": { slug: "self_harm",
       subs: ["Intentional Self-Harm", "Threatening Self-Harm", "Encouraging Others to Self-Harm"] },
     "Spam, Scams, Bots, or Tampering": { slug: "spam",
@@ -94,7 +95,6 @@
     }, 200);
   }
 
-  // --- dropdowns -----------------------------------------------------------
   function populateDropdowns() {
     const contentSel = $("s-content");
     const reasonSel  = $("s-reason");
@@ -112,6 +112,14 @@
     }
   }
 
+  function updateReasonFieldsVisibility() {
+    const hide = $("s-reason").value === "Off Twitch Behavior";
+    const reasonField = $("s-reason-field");
+    const subField    = $("s-subreason-field");
+    if (reasonField) reasonField.style.display = hide ? "none" : "";
+    if (subField)    subField.style.display    = hide ? "none" : "";
+  }
+
   function refreshSubs() {
     const subSel = $("s-subreason");
     const parent = $("s-reason").value;
@@ -120,12 +128,15 @@
     none.value = ""; none.textContent = "— none —";
     subSel.appendChild(none);
     const r = REASONS[parent];
-    if (!r) return;
+    if (!r) { updateReasonFieldsVisibility(); return; }
     for (const s of r.subs) {
       const o = document.createElement("option");
       o.value = s; o.textContent = s;
       subSel.appendChild(o);
     }
+    const offTwitch = parent === "Off Twitch Behavior";
+    subSel.disabled = offTwitch || r.subs.length === 0;
+    updateReasonFieldsVisibility();
   }
 
   function applySettingsToForm() {
@@ -138,16 +149,22 @@
     $("s-timeout").value   = settings.timeoutMs;
     $("s-retries").value   = settings.maxRetries;
     $("s-cycles").value    = settings.cycleLimit;
-    $("s-details").value   = settings.descriptionText || "";
+    $("s-debug-toggle").checked = settings.debug !== false;
+    refreshFileInfo();
+  }
+
+  function refreshFileInfo() {
+    const variants = parseDescriptionLines(settings.descriptionText || "");
+    const el = $("s-reason-file-info");
+    if (!el) return;
+    if (settings._reasonFileName) {
+      el.textContent = `${settings._reasonFileName} — ${variants.length} variant(s)`;
+    } else {
+      el.textContent = "no .reports file loaded";
+    }
   }
 
   function bindSettings() {
-    const bindText = (el, key) => {
-      el.addEventListener("input", () => {
-        settings[key] = el.value;
-        saveSettingsSoon();
-      });
-    };
     const bindInt = (el, key, min, max) => {
       const handler = () => {
         const n = parseInt(el.value, 10);
@@ -180,10 +197,41 @@
     bindInt($("s-timeout"),   "timeoutMs", 500, null);
     bindInt($("s-retries"),   "maxRetries", 1, 20);
     bindInt($("s-cycles"),    "cycleLimit", 0, 999);
-    bindText($("s-details"),  "descriptionText");
+
+    $("s-debug-toggle").addEventListener("change", async () => {
+      settings.debug = $("s-debug-toggle").checked;
+      saveSettingsSoon();
+      if (settings.debug === false) {
+        await chrome.storage.local.set({ [K_DEBUG]: [] });
+      }
+    });
+
+    $("s-reason-file").addEventListener("change", () => {
+      const file = $("s-reason-file").files && $("s-reason-file").files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || "");
+        settings.descriptionText = text;
+        settings._reasonFileName = file.name;
+        saveSettingsSoon();
+        refreshFileInfo();
+        flash(".reports file loaded");
+      };
+      reader.onerror = () => { flash(".reports file read failed"); };
+      reader.readAsText(file);
+    });
+
+    $("btn-clear-file").addEventListener("click", () => {
+      settings.descriptionText = "";
+      settings._reasonFileName = null;
+      $("s-reason-file").value = "";
+      saveSettingsSoon();
+      refreshFileInfo();
+      flash(".reports file cleared");
+    });
   }
 
-  // --- variant parser ($-prefixed) -----------------------------------------
   function parseDescriptionLines(raw) {
     if (!raw || typeof raw !== "string") return [];
     const normalized = raw.replace(/\r\n?/g, "\n");
@@ -212,7 +260,12 @@
     return out;
   }
 
-  // --- progress ------------------------------------------------------------
+  function shortUA(ua) {
+    if (!ua) return "—";
+    const m = ua.match(/(Chrome|Firefox|Edg)\/[\d.]+/);
+    return m ? "…" + m[0] : "…" + ua.slice(-30);
+  }
+
   function renderProgress(progress, settingsObj, target) {
     const p = progress || {};
     const s = settingsObj || DEFAULT_SETTINGS;
@@ -225,12 +278,19 @@
     $("p-limit").textContent = limit;
     $("p-used").textContent = total > 0 ? `${used} / ${total}` : String(used);
     $("p-target").textContent = target ? "/" + target : "—";
+    $("p-ua").textContent = shortUA(p.lastUA);
   }
 
-  // --- debug ---------------------------------------------------------------
   function renderDebug(lines) {
     const el = $("debug-log");
     const countEl = $("debug-count");
+
+    if (settings.debug === false) {
+      el.textContent = "(debug disabled)";
+      countEl.textContent = "0 lines";
+      return;
+    }
+
     const arr = Array.isArray(lines) ? lines : [];
     countEl.textContent = arr.length + " line" + (arr.length === 1 ? "" : "s");
 
@@ -241,7 +301,6 @@
     if (autoscroll && wasAtBottom) el.scrollTop = el.scrollHeight;
   }
 
-  // --- emails --------------------------------------------------------------
   function renderEmails(rows) {
     const tbody = document.querySelector("#emails-table tbody");
     const countEl = $("emails-count");
@@ -249,7 +308,7 @@
     countEl.textContent = arr.length + " entr" + (arr.length === 1 ? "y" : "ies");
 
     if (arr.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty">no emails used yet</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">no emails used yet</td></tr>`;
       return;
     }
     const view = arr.slice().reverse();
@@ -262,6 +321,7 @@
         <td>${escapeHtml(r.channel || "")}</td>
         <td>${escapeHtml(r.reason || "")}</td>
         <td>${escapeHtml(r.subreason || "")}</td>
+        <td>${escapeHtml(shortUA(r.ua))}</td>
         <td class="time">${escapeHtml(ts)}</td>
       </tr>`;
     }).join("");
@@ -275,13 +335,12 @@
       .replace(/"/g, "&quot;");
   }
 
-  // --- buttons -------------------------------------------------------------
   function wireButtons() {
     $("btn-refresh").addEventListener("click", reloadAll);
 
     $("btn-reset-progress").addEventListener("click", async () => {
       await chrome.storage.local.set({
-        [K_PROGRESS]: { usedLines: [], cycleCount: 0 }
+        [K_PROGRESS]: { usedLines: [], cycleCount: 0, lastUA: null }
       });
       flash("progress reset");
     });
@@ -289,7 +348,7 @@
       if (!confirm("reset settings + progress + debug + emails?")) return;
       await chrome.storage.local.set({
         [K_SETTINGS]: { ...DEFAULT_SETTINGS },
-        [K_PROGRESS]: { usedLines: [], cycleCount: 0 },
+        [K_PROGRESS]: { usedLines: [], cycleCount: 0, lastUA: null },
         [K_DEBUG]: [],
         [K_EMAILS]: [],
         [K_TARGET]: null
@@ -318,7 +377,7 @@
       const data = await chrome.storage.local.get(K_EMAILS);
       const rows = data[K_EMAILS] || [];
       const text = rows.map((r) =>
-        `${new Date(r.ts).toISOString()}\t${r.email}\t${r.channel || ""}\t${r.reason || ""}\t${r.subreason || ""}`
+        `${new Date(r.ts).toISOString()}\t${r.email}\t${r.channel || ""}\t${r.reason || ""}\t${r.subreason || ""}\t${r.ua || ""}`
       ).join("\n");
       await navigator.clipboard.writeText(text);
       flash("emails copied");
@@ -335,7 +394,6 @@
     flashTimer = setTimeout(() => { el.textContent = prev; }, 1500);
   }
 
-  // --- live storage subscription -------------------------------------------
   function subscribeStorage() {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
@@ -355,7 +413,6 @@
     renderProgress(data[K_PROGRESS], data[K_SETTINGS] || settings, data[K_TARGET]);
   }
 
-  // --- boot ----------------------------------------------------------------
   async function reloadAll() {
     const data = await chrome.storage.local.get([K_SETTINGS, K_PROGRESS, K_DEBUG, K_EMAILS, K_TARGET]);
     settings = { ...DEFAULT_SETTINGS, ...(data[K_SETTINGS] || {}) };

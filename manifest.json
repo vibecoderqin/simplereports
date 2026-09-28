@@ -1,11 +1,17 @@
 {
   "manifest_version": 3,
   "name": "TS Reporter",
-  "version": "1.5.0",
+  "version": "1.8.0",
   "description": "Incognito-only reporting helper.",
   "incognito": "split",
   "minimum_chrome_version": "120",
-  "permissions": ["storage", "activeTab", "scripting", "notifications"],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "notifications",
+    "declarativeNetRequest"
+  ],
   "host_permissions": ["https://www.twitch.tv/*"],
   "background": {
     "service_worker": "background.js",

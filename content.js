@@ -1,7 +1,6 @@
 (() => {
   "use strict";
 
-  const DEBUG = true;
   const LOG_PREFIX = "[TS-Reporter]";
   const IS_INCOGNITO = chrome.extension?.inIncognitoContext === true;
   if (!IS_INCOGNITO) return;
@@ -30,10 +29,11 @@
     timeoutMs: 8000,
     maxRetries: 3,
     cycleLimit: 10,
-    reloadOnFail: true
+    reloadOnFail: true,
+    debug: true
   };
 
-  const DEFAULT_PROGRESS = { usedLines: [], cycleCount: 0 };
+  const DEFAULT_PROGRESS = { usedLines: [], cycleCount: 0, lastUA: null };
 
   const state = {
     running: false,
@@ -45,13 +45,11 @@
     targetChannel: null
   };
 
-  const log   = (...a) => { if (DEBUG) console.log(LOG_PREFIX, ...a); };
-  const warn  = (...a) => { if (DEBUG) console.warn(LOG_PREFIX, ...a); };
-  const err   = (...a) => { if (DEBUG) console.error(LOG_PREFIX, ...a); };
+  const isDebug = () => state.settings.debug !== false;
+  const log   = (...a) => { if (!isDebug()) return; console.log(LOG_PREFIX, ...a); };
+  const warn  = (...a) => { if (!isDebug()) return; console.warn(LOG_PREFIX, ...a); };
+  const err   = (...a) => { if (!isDebug()) return; console.error(LOG_PREFIX, ...a); };
 
-  // =========================================================
-  // debug buffer → chrome.storage.local (ring, batched)
-  // =========================================================
   let debugQueue = [];
   let debugFlushTimer = null;
 
@@ -69,17 +67,15 @@
   }
 
   const debugLog = (line) => {
+    if (!isDebug()) return;
     const stamped = `[${new Date().toISOString().slice(11, 19)}] ${line}`;
-    if (DEBUG) log(line);
+    log(line);
     debugQueue.push(stamped);
     if (debugQueue.length > 40) flushDebugQueue();
     else if (!debugFlushTimer) debugFlushTimer = setTimeout(flushDebugQueue, 250);
   };
 
-  // =========================================================
-  // email log
-  // =========================================================
-  async function recordEmail(email, channel, reason, subreason) {
+  async function recordEmail(email, channel, reason, subreason, ua) {
     try {
       const data = await chrome.storage.local.get(K_EMAILS);
       const arr = Array.isArray(data[K_EMAILS]) ? data[K_EMAILS] : [];
@@ -88,6 +84,7 @@
         channel: channel || null,
         reason: reason || null,
         subreason: subreason || null,
+        ua: ua || null,
         ts: Date.now()
       });
       if (arr.length > EMAIL_LIMIT) arr.splice(0, arr.length - EMAIL_LIMIT);
@@ -95,9 +92,6 @@
     } catch (e) { warn("recordEmail failed", e); }
   }
 
-  // =========================================================
-  // utils
-  // =========================================================
   const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
   function sleepInterruptible(ms) {
@@ -125,15 +119,28 @@
     });
   }
 
+  const EMAIL_PREFIXES = [
+    "user", "usr", "mail", "inbox", "contact", "acc", "account",
+    "member", "reg", "signup", "hello", "info", "no-reply", "support",
+    "help", "admin", "team", "office", "client", "guest"
+  ];
+
+  const EMAIL_DOMAINS = [
+    "gmail.com", "hotmail.com", "yahoo.com", "outlook.com", "icloud.com",
+    "aol.com", "mail.ru", "bk.ru", "list.ru", "inbox.ru", "yandex.ru",
+    "ya.ru", "qq.com", "web.de", "gmx.net", "rambler.ru", "me.com",
+    "mac.com", "atomicmail.io", "proton.me", "tutanota.com", "duck.com",
+    "protonmail.com", "onionmail.org", "onionmail.com", "2mail.co",
+    "mail2tor.co"
+  ];
+
   function randomEmail() {
-    const domains = [
-      "gmail.com", "hotmail.com", "yahoo.com", "outlook.com", "icloud.com",
-      "aol.com", "mail.ru", "bk.ru", "list.ru", "inbox.ru", "yandex.ru",
-      "ya.ru", "qq.com", "web.de", "gmx.net", "rambler.ru", "me.com",
-      "mac.com", "atomicmail.io", "proton.me"
-    ];
-    const d = domains[Math.floor(Math.random() * domains.length)];
-    return `user_${Math.random().toString(36).slice(2, 8)}@${d}`;
+    const prefix = EMAIL_PREFIXES[Math.floor(Math.random() * EMAIL_PREFIXES.length)];
+    const sep = Math.random() < 0.5 ? "_" : "";
+    const len = rand(5, 8);
+    const suffix = Math.random().toString(36).slice(2, 2 + len);
+    const domain = EMAIL_DOMAINS[Math.floor(Math.random() * EMAIL_DOMAINS.length)];
+    return `${prefix}${sep}${suffix}@${domain}`;
   }
 
   const inPanel = (el) => !!(el && el.closest && el.closest("#" + PANEL_ID));
@@ -158,9 +165,6 @@
     return slug;
   }
 
-  // =========================================================
-  // storage
-  // =========================================================
   async function loadAll() {
     try {
       const data = await chrome.storage.local.get([K_SETTINGS, K_PROGRESS, K_POS, K_TARGET]);
@@ -188,9 +192,6 @@
     });
   }
 
-  // =========================================================
-  // selectors & data
-  // =========================================================
   const SEL = {
     moreOptions: [
       'button[data-a-target="report-button-more-button"]',
@@ -214,6 +215,8 @@
       '[data-a-target="form-navigation-submit"]'
     ],
     closeConfirm: [
+      'button[data-a-target="form-navigation-close"]',
+      '[data-a-target="form-navigation-close"]',
       'button[data-a-target="confirmation-screen-close"]',
       '[data-a-target="confirmation-screen-close"]'
     ],
@@ -230,7 +233,8 @@
     { label: "Chat Messages", slug: "CHAT_REPORT" },
     { label: "Whispers",      slug: "WHISPER_REPORT" },
     { label: "Username",      slug: "USERNAME_REPORT" },
-    { label: "User (Avatar, Channel Points, Panels, Tags, etc.)", slug: "USER_REPORT" }
+    { label: "User (Avatar, Channel Points, Panels, Tags, etc.)", slug: "USER_REPORT" },
+    { label: "Off Twitch Behavior", slug: "OFF_TWITCH_REPORT" }
   ];
 
   const REASONS = {
@@ -256,6 +260,7 @@
       subs: ["Sexually Explicit", "Sexual Violence", "Full or Partial Nudity",
              "Sexual Conduct Involving Minors", "Sharing Private Images"]
     },
+    "Off Twitch Behavior": { slug: "off_twitch_behavior", subs: [] },
     "Self-Harm": { slug: "self_harm",
       subs: ["Intentional Self-Harm", "Threatening Self-Harm", "Encouraging Others to Self-Harm"] },
     "Spam, Scams, Bots, or Tampering": {
@@ -299,9 +304,6 @@
     "Viewership Tampering": "viewership_tampering"
   };
 
-  // =========================================================
-  // dom helpers
-  // =========================================================
   function getWizard() {
     const dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
     for (const d of dialogs) {
@@ -392,9 +394,6 @@
     return false;
   }
 
-  // =========================================================
-  // atomic actions
-  // =========================================================
   async function pickRadio(name, slug, labelText) {
     const wizard = getWizard();
     if (!wizard) throw new Error("wizard not mounted");
@@ -450,6 +449,10 @@
   }
 
   async function fillEmail() {
+    if (state.settings.reason === "Off Twitch Behavior") {
+      debugLog("email skipped (Off Twitch)");
+      return;
+    }
     const wizard = getWizard();
     if (!wizard) throw new Error("wizard not mounted");
     const input =
@@ -463,7 +466,13 @@
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
     debugLog(`email filled into #${input.id || "input"}: ${value}`);
-    await recordEmail(value, state.targetChannel, state.settings.reason, state.settings.subreason);
+    await recordEmail(
+      value,
+      state.targetChannel,
+      state.settings.reason,
+      state.settings.subreason,
+      state.progress.lastUA
+    );
   }
 
   async function submitReport() {
@@ -485,9 +494,6 @@
 
   function detectCaptcha() { return !!qs(SEL.captcha); }
 
-  // =========================================================
-  // description variant picker ($-prefixed)
-  // =========================================================
   function parseDescriptionLines(raw) {
     if (!raw || typeof raw !== "string") return [];
     const normalized = raw.replace(/\r\n?/g, "\n");
@@ -542,9 +548,6 @@
     return pick;
   }
 
-  // =========================================================
-  // channel anchor
-  // =========================================================
   async function ensureBackOnChannel() {
     if (!state.targetChannel) return true;
     const cur = getCurrentChannel();
@@ -557,9 +560,30 @@
     return false;
   }
 
-  // =========================================================
-  // state machine
-  // =========================================================
+  async function rotateUA() {
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage({ type: "ROTATE_UA" }, (resp) => {
+          if (chrome.runtime.lastError) {
+            debugLog("UA rotate failed: " + chrome.runtime.lastError.message);
+            return resolve(null);
+          }
+          if (resp && resp.ok && resp.ua) {
+            const tail = resp.ua.match(/(Chrome|Firefox|Edg)\/[\d.]+/);
+            debugLog("UA rotated: " + (tail ? "…" + tail[0] : "…" + resp.ua.slice(-30)));
+            state.progress.lastUA = resp.ua;
+            persistSoon();
+            return resolve(resp.ua);
+          }
+          resolve(null);
+        });
+      } catch (e) {
+        debugLog("UA rotate exception: " + e.message);
+        resolve(null);
+      }
+    });
+  }
+
   class StepTimeoutError extends Error {
     constructor(step, timeout) {
       super(`step "${step.name}" timeout after ${timeout}ms`);
@@ -603,6 +627,7 @@
       name: "wizard-reason",
       screen: "wizard · step 2 (reason)",
       detect: () => {
+        if (state.settings.reason === "Off Twitch Behavior") return "skipped";
         const w = getWizard();
         return w && w.querySelector('input[name="reason-select-radio-group"]');
       },
@@ -635,6 +660,7 @@
       name: "wizard-search-pick",
       screen: "wizard · search results",
       detect: () => {
+        if (state.settings.reason === "Off Twitch Behavior") return "skipped";
         if (!state.usedSearchReason) return "skipped";
         const w = getWizard();
         return w && w.querySelector('input[name="reason-search-radio-group"]');
@@ -657,6 +683,7 @@
       name: "wizard-detail",
       screen: "wizard · step 3 (detailed reason)",
       detect: () => {
+        if (state.settings.reason === "Off Twitch Behavior") return "skipped";
         if (state.usedSearchReason) return "skipped";
         const r = REASONS[state.settings.reason];
         if (!r || r.subs.length === 0) return "skipped";
@@ -677,6 +704,7 @@
       name: "wizard-description",
       screen: "wizard · step 4 (description)",
       detect: () => {
+        if (state.settings.reason === "Off Twitch Behavior") return "skipped";
         const w = getWizard();
         if (!w) return null;
         return w.querySelector('textarea[aria-label^="Tell us more"]') ||
@@ -752,9 +780,6 @@
     setTimeout(() => location.reload(), 800);
   }
 
-  // =========================================================
-  // automation loop
-  // =========================================================
   async function runAll() {
     const ctx = {
       delayMs: rand(state.settings.delayMin, state.settings.delayMax),
@@ -766,7 +791,8 @@
       if (state.settings.cycleLimit > 0 &&
           state.progress.cycleCount >= state.settings.cycleLimit) {
         debugLog(`✔ cycle limit reached (${state.progress.cycleCount}/${state.settings.cycleLimit})`);
-        break;
+        setStatus("cycle limit reached — press 'reset cycles' or raise limit", "err");
+        return;
       }
 
       const ch = getCurrentChannel();
@@ -779,6 +805,7 @@
       const limitLabel = state.settings.cycleLimit === 0 ? "∞" : String(state.settings.cycleLimit);
       debugLog(`▶ starting cycle ${state.progress.cycleCount}/${limitLabel} on /${state.targetChannel || "?"}`);
 
+      await rotateUA();
       state.currentLine = pickDescriptionLine();
       state.usedSearchReason = false;
 
@@ -813,12 +840,18 @@
     if (state.settings.timeoutMs < 500) { setStatus("error: timeout ≥ 500 ms", "err"); return; }
     if (state.settings.maxRetries < 1) { setStatus("error: retries ≥ 1", "err"); return; }
 
+    const variants = parseDescriptionLines(state.settings.descriptionText || "");
+    if (variants.length === 0) {
+      setStatus("load a .reports file before starting", "err");
+      return;
+    }
+
     state.running = true;
     updateUI();
     setStatus(autoResumed ? "resumed after reload…" : "running…");
     try {
       await runAll();
-      setStatus("done.", "ok");
+      if (state.running) setStatus("done.", "ok");
     } catch (e) {
       setStatus("error: " + e.message, "err");
       err(e);
@@ -837,9 +870,6 @@
     updateUI();
   }
 
-  // =========================================================
-  // panel
-  // =========================================================
   function buildPanel() {
     if (document.getElementById(PANEL_ID)) return;
 
@@ -855,11 +885,11 @@
           <label for="tsr-content">content type</label>
           <select id="tsr-content"></select>
         </div>
-        <div class="tsr-row">
+        <div class="tsr-row" id="tsr-reason-row">
           <label for="tsr-reason">reason (parent)</label>
           <select id="tsr-reason"></select>
         </div>
-        <div class="tsr-row">
+        <div class="tsr-row" id="tsr-subreason-row">
           <label for="tsr-subreason">detailed reason</label>
           <select id="tsr-subreason"><option value="">— none —</option></select>
         </div>
@@ -888,12 +918,20 @@
           <input type="number" id="tsr-cycles" min="0" max="999" step="1" />
         </div>
         <div class="tsr-row">
-          <label for="tsr-details">complaint variants (each starts with $)</label>
-          <textarea id="tsr-details" rows="5" placeholder="$variant 1 …&#10;$variant 2 …&#10;$variant 3 (can span multiple lines)"></textarea>
+          <label for="tsr-reason-file">load .reports file</label>
+          <input type="file" id="tsr-reason-file" accept=".reports" />
+          <span id="tsr-reason-file-info" class="tsr-muted">no .reports file loaded</span>
+        </div>
+        <div class="tsr-buttons">
+          <button class="tsr-btn tsr-btn-ghost" id="tsr-clear-file">clear file</button>
         </div>
         <div class="tsr-buttons">
           <button class="tsr-btn tsr-btn-primary" id="tsr-run">run</button>
           <button class="tsr-btn tsr-btn-secondary" id="tsr-stop" disabled>stop</button>
+          <button class="tsr-btn tsr-btn-ghost" id="tsr-reset-cycles">reset cycles</button>
+        </div>
+        <div class="tsr-buttons">
+          <label class="tsr-muted"><input type="checkbox" id="tsr-debug-toggle" /> debug</label>
         </div>
         <div class="tsr-buttons">
           <button class="tsr-btn tsr-btn-ghost" id="tsr-dashboard">open dashboard</button>
@@ -901,23 +939,31 @@
         <div class="tsr-progress" id="tsr-progress">cycle 0/10 — idle</div>
         <div class="tsr-status" id="tsr-status">idle</div>
       </div>
+      <div class="tsr-resize-handle"></div>
     `;
     document.documentElement.appendChild(panel);
 
     const $ = (id) => panel.querySelector("#" + id);
     const contentSel  = $("tsr-content");
     const reasonSel   = $("tsr-reason");
+    const reasonRow   = $("tsr-reason-row");
+    const subRow      = $("tsr-subreason-row");
     const subSel      = $("tsr-subreason");
     const delayMinEl  = $("tsr-delay-min");
     const delayMaxEl  = $("tsr-delay-max");
     const timeoutEl   = $("tsr-timeout");
     const retriesEl   = $("tsr-retries");
     const cyclesEl    = $("tsr-cycles");
-    const detailsTA   = $("tsr-details");
+    const reasonFile  = $("tsr-reason-file");
+    const reasonFileInfo = $("tsr-reason-file-info");
+    const clearFileBtn = $("tsr-clear-file");
     const runBtn      = $("tsr-run");
     const stopBtn     = $("tsr-stop");
+    const resetCycBtn = $("tsr-reset-cycles");
+    const debugToggle = $("tsr-debug-toggle");
     const dashBtn     = $("tsr-dashboard");
     const collapseBtn = $("tsr-collapse");
+    const resizeHandle = panel.querySelector(".tsr-resize-handle");
 
     for (const c of CONTENT_TYPES) {
       const o = document.createElement("option");
@@ -929,18 +975,28 @@
       o.value = r; o.textContent = r;
       reasonSel.appendChild(o);
     }
+
+    function updateReasonFieldsVisibility() {
+      const hide = reasonSel.value === "Off Twitch Behavior";
+      reasonRow.style.display = hide ? "none" : "";
+      subRow.style.display = hide ? "none" : "";
+    }
+
     function refreshSubs() {
       subSel.innerHTML = "";
       const none = document.createElement("option");
       none.value = ""; none.textContent = "— none —";
       subSel.appendChild(none);
       const r = REASONS[reasonSel.value];
-      if (!r) return;
+      if (!r) { updateReasonFieldsVisibility(); return; }
       for (const s of r.subs) {
         const o = document.createElement("option");
         o.value = s; o.textContent = s;
         subSel.appendChild(o);
       }
+      const offTwitch = reasonSel.value === "Off Twitch Behavior";
+      subSel.disabled = offTwitch || r.subs.length === 0;
+      updateReasonFieldsVisibility();
     }
     reasonSel.addEventListener("change", refreshSubs);
 
@@ -953,7 +1009,19 @@
     timeoutEl.value  = state.settings.timeoutMs;
     retriesEl.value  = state.settings.maxRetries;
     cyclesEl.value   = state.settings.cycleLimit;
-    detailsTA.value  = state.settings.descriptionText || "";
+    debugToggle.checked = state.settings.debug !== false;
+
+    function refreshFileInfo() {
+      const variants = parseDescriptionLines(state.settings.descriptionText || "");
+      if (!state.settings._reasonFileName) {
+        reasonFileInfo.textContent = variants.length
+          ? `${variants.length} variant(s) loaded`
+          : "no .reports file loaded";
+      } else {
+        reasonFileInfo.textContent = `${state.settings._reasonFileName} — ${variants.length} variant(s)`;
+      }
+    }
+    refreshFileInfo();
 
     const bindSetting = (el, key, parser = (v) => v) => {
       const handler = () => {
@@ -984,15 +1052,60 @@
       if (!Number.isFinite(n) || n < 0 || n > 999) { setStatus("error: cycles 0–999", "err"); return null; }
       return n;
     });
-    bindSetting(detailsTA, "descriptionText", (v) => v);
+
+    debugToggle.addEventListener("change", (e) => {
+      state.settings.debug = e.target.checked;
+      persistSoon();
+    });
+
+    reasonFile.addEventListener("change", () => {
+      const file = reasonFile.files && reasonFile.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || "");
+        state.settings.descriptionText = text;
+        state.settings._reasonFileName = file.name;
+        persistSoon();
+        refreshFileInfo();
+        updateProgressUI();
+        const count = parseDescriptionLines(text).length;
+        debugLog(`.reports file loaded: ${file.name} (${count} variant(s))`);
+      };
+      reader.onerror = () => { debugLog(".reports file read failed"); };
+      reader.readAsText(file);
+    });
+
+    clearFileBtn.addEventListener("click", () => {
+      state.settings.descriptionText = "";
+      state.settings._reasonFileName = null;
+      reasonFile.value = "";
+      persistSoon();
+      refreshFileInfo();
+      updateProgressUI();
+      debugLog(".reports file cleared");
+    });
 
     collapseBtn.addEventListener("click", () => {
       panel.classList.toggle("tsr-collapsed");
       collapseBtn.textContent = panel.classList.contains("tsr-collapsed") ? "▸" : "▾";
     });
 
-    runBtn.addEventListener("click", () => startRun(false));
+    runBtn.addEventListener("click", () => {
+      debugLog("run button clicked");
+      startRun(false);
+    });
     stopBtn.addEventListener("click", () => stopRun("user"));
+
+    resetCycBtn.addEventListener("click", async () => {
+      state.progress.cycleCount = 0;
+      state.progress.usedLines = [];
+      await persistNow();
+      updateProgressUI();
+      setStatus("cycle counter reset", "ok");
+      debugLog("cycle counter reset");
+    });
+
     dashBtn.addEventListener("click", () => {
       debugLog("open dashboard requested");
       try {
@@ -1015,12 +1128,13 @@
     });
 
     makeDraggable(panel, panel.querySelector("#tsr-header"));
+    makeResizable(panel, resizeHandle);
     restorePosition(panel);
 
     panel._refs = { runBtn, stopBtn };
     updateUI();
     updateProgressUI();
-    debugLog("panel built");
+    debugLog("panel built (run enabled=" + !runBtn.disabled + ")");
   }
 
   function setStatus(msg, kind = "") {
@@ -1077,7 +1191,38 @@
       if (!dragging) return;
       dragging = false;
       const r = panel.getBoundingClientRect();
-      chrome.storage.local.set({ [K_POS]: { left: r.left, top: r.top } });
+      chrome.storage.local.set({ [K_POS]: {
+        left: r.left, top: r.top, width: r.width, height: r.height
+      }});
+    });
+  }
+
+  function makeResizable(panel, handle) {
+    if (!handle) return;
+    let resizing = false;
+    let startW = 0, startH = 0, startX = 0, startY = 0;
+    handle.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      resizing = true;
+      startW = panel.offsetWidth;
+      startH = panel.offsetHeight;
+      startX = e.clientX;
+      startY = e.clientY;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (!resizing) return;
+      panel.style.width  = Math.max(280, startW + e.clientX - startX) + "px";
+      panel.style.height = Math.max(220, startH + e.clientY - startY) + "px";
+    });
+    document.addEventListener("mouseup", () => {
+      if (!resizing) return;
+      resizing = false;
+      const r = panel.getBoundingClientRect();
+      chrome.storage.local.set({ [K_POS]: {
+        left: r.left, top: r.top, width: r.width, height: r.height
+      }});
     });
   }
 
@@ -1088,14 +1233,13 @@
       if (p && typeof p.left === "number") {
         panel.style.left = p.left + "px";
         panel.style.top  = p.top + "px";
+        if (typeof p.width === "number")  panel.style.width  = p.width + "px";
+        if (typeof p.height === "number") panel.style.height = p.height + "px";
         debugLog("position restored");
       }
     } catch (e) { warn(e); }
   }
 
-  // =========================================================
-  // init
-  // =========================================================
   const observer = new MutationObserver(() => {
     if (!document.getElementById(PANEL_ID)) buildPanel();
   });
@@ -1103,6 +1247,13 @@
   async function init() {
     debugLog("init (incognito=" + IS_INCOGNITO + ")");
     await loadAll();
+
+    const stale = document.getElementById(PANEL_ID);
+    if (stale) {
+      debugLog("removing stale panel (likely from previous extension context)");
+      stale.remove();
+    }
+
     buildPanel();
     observer.observe(document.documentElement, { childList: true, subtree: true });
 

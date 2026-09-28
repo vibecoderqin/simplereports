@@ -9,14 +9,19 @@
   top: 80px;
   left: 80px;
   width: 340px;
+  min-width: 280px;
+  min-height: 220px;
   background: #18181b;
   color: #efeff1;
   border: 1px solid #2f2f35;
   border-radius: 8px;
-  z-index: 999999;
+  z-index: 2147483647;
+  pointer-events: auto !important;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   font-size: 13px;
   user-select: none;
+  display: flex;
+  flex-direction: column;
 }
 
 #tsr-panel.tsr-collapsed .tsr-body { display: none; }
@@ -30,6 +35,7 @@
   border-bottom: 1px solid #2f2f35;
   border-radius: 8px 8px 0 0;
   cursor: move;
+  flex: 0 0 auto;
 }
 #tsr-header .tsr-title { font-weight: 600; letter-spacing: 0.3px; color: #a970ff; }
 #tsr-header .tsr-toggle {
@@ -42,6 +48,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 auto;
+  overflow-y: auto;
 }
 
 .tsr-row { display: flex; flex-direction: column; gap: 4px; }
@@ -53,6 +61,7 @@
 .tsr-row select,
 .tsr-row input[type="text"],
 .tsr-row input[type="number"],
+.tsr-row input[type="file"],
 .tsr-row textarea {
   background: #0e0e10;
   border: 1px solid #2f2f35;
@@ -66,8 +75,11 @@
 .tsr-row select:focus,
 .tsr-row input:focus,
 .tsr-row textarea:focus { border-color: #a970ff; }
+.tsr-row select:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .tsr-row textarea { resize: vertical; min-height: 64px; font-family: inherit; }
+
+.tsr-muted { font-size: 11px; color: #adadb8; }
 
 .tsr-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .tsr-grid2 .tsr-row { margin: 0; }
@@ -76,7 +88,7 @@
 .tsr-delay input { flex: 1; min-width: 0; }
 .tsr-delay span { color: #adadb8; font-size: 11px; }
 
-.tsr-buttons { display: flex; gap: 6px; margin-top: 4px; }
+.tsr-buttons { display: flex; gap: 6px; margin-top: 4px; align-items: center; flex-wrap: wrap; }
 
 .tsr-btn {
   flex: 1;
@@ -87,6 +99,7 @@
   font-weight: 600;
   font-size: 12px;
   transition: opacity 0.15s;
+  pointer-events: auto !important;
 }
 .tsr-btn:hover { opacity: 0.85; }
 .tsr-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -124,3 +137,24 @@
 }
 
 .tsr-hidden { display: none !important; }
+
+.tsr-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  z-index: 2;
+}
+.tsr-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #a970ff;
+  border-bottom: 2px solid #a970ff;
+  opacity: 0.7;
+}
