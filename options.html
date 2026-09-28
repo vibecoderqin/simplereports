@@ -44,6 +44,7 @@
           <div class="stat"><span class="stat-label">limit</span><span class="stat-val" id="p-limit">—</span></div>
           <div class="stat"><span class="stat-label">variants used</span><span class="stat-val" id="p-used">0</span></div>
           <div class="stat"><span class="stat-label">target</span><span class="stat-val" id="p-target">—</span></div>
+          <div class="stat"><span class="stat-label">last user-agent</span><span class="stat-val" id="p-ua">—</span></div>
         </div>
       </div>
     </section>
@@ -59,11 +60,11 @@
             <span>content type</span>
             <select id="s-content"></select>
           </label>
-          <label class="field">
+          <label class="field" id="s-reason-field">
             <span>reason (parent)</span>
             <select id="s-reason"></select>
           </label>
-          <label class="field">
+          <label class="field" id="s-subreason-field">
             <span>detailed reason</span>
             <select id="s-subreason"><option value="">— none —</option></select>
           </label>
@@ -93,13 +94,16 @@
         </div>
 
         <label class="field">
-          <span>complaint variants (each starts with $)</span>
-          <textarea id="s-details" rows="8" placeholder="$variant 1 …&#10;$variant 2 …&#10;$variant 3 (can span multiple lines)"></textarea>
+          <span>load .reports file</span>
+          <input type="file" id="s-reason-file" accept=".reports" />
+          <span class="muted" id="s-reason-file-info">no .reports file loaded</span>
         </label>
 
         <div class="row-buttons">
+          <button class="btn btn-ghost" id="btn-clear-file">clear file</button>
           <button class="btn btn-danger" id="btn-reset-progress">reset progress</button>
           <button class="btn btn-ghost" id="btn-reset-all">reset everything</button>
+          <label class="check"><input type="checkbox" id="s-debug-toggle" /> enable debug logging</label>
         </div>
       </div>
     </section>
@@ -137,6 +141,7 @@
               <th>channel</th>
               <th>reason</th>
               <th>detailed</th>
+              <th>user-agent</th>
               <th>time</th>
             </tr>
           </thead>
