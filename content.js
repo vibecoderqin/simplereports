@@ -1240,8 +1240,15 @@
     } catch (e) { warn(e); }
   }
 
+// Twitch mutates large DOM subtrees frequently. Coalesce callbacks to one check per frame.
+  let panelCheckScheduled = false;
   const observer = new MutationObserver(() => {
-    if (!document.getElementById(PANEL_ID)) buildPanel();
+    if (panelCheckScheduled) return;
+    panelCheckScheduled = true;
+    requestAnimationFrame(() => {
+      panelCheckScheduled = false;
+      if (!document.getElementById(PANEL_ID)) buildPanel();
+    });
   });
 
   async function init() {
