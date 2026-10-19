@@ -1,27 +1,33 @@
 {
   "manifest_version": 3,
   "name": "TS Reporter",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Incognito-only reporting helper.",
   "incognito": "split",
   "minimum_chrome_version": "120",
   "permissions": [
     "storage",
-    "activeTab",
-    "scripting",
     "notifications",
     "declarativeNetRequest"
   ],
-  "host_permissions": ["https://www.twitch.tv/*"],
+  "host_permissions": [
+    "https://www.twitch.tv/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://www.twitch.tv/*"],
-      "js": ["content.js"],
-      "css": ["panel.css"],
+      "matches": [
+        "https://www.twitch.tv/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "panel.css"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
@@ -30,5 +36,7 @@
     "page": "options.html",
     "open_in_tab": true
   },
-  "action": { "default_title": "TS Reporter (incognito only)" }
+  "action": {
+    "default_title": "TS Reporter (incognito only)"
+  }
 }
