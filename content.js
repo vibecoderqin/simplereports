@@ -833,32 +833,23 @@
     }
   }
 
-  async function startRun(autoResumed = false) {
+  async function startRun() {
     if (state.running) return;
-    const cl = Number(state.settings.cycleLimit);
-    if (!Number.isInteger(cl) || cl < 0 || cl > 999) { setStatus("error: cycles 0–999", "err"); return; }
-    if (state.settings.timeoutMs < 500) { setStatus("error: timeout ≥ 500 ms", "err"); return; }
-    if (state.settings.maxRetries < 1) { setStatus("error: retries ≥ 1", "err"); return; }
-
     const variants = parseDescriptionLines(state.settings.descriptionText || "");
     if (variants.length === 0) {
-      setStatus("load a .reports file before starting", "err");
+      setStatus("Load a .reports file or enter a draft in settings first.", "err");
       return;
     }
 
-    state.running = true;
-    updateUI();
-    setStatus(autoResumed ? "resumed after reload…" : "running…");
+    // Prepare one draft only. Submission remains a deliberate, manual user action.
+    const draft = variants[0];
     try {
-      await runAll();
-      if (state.running) setStatus("done.", "ok");
+      await navigator.clipboard.writeText(draft);
+      setStatus("Draft copied. Review its accuracy, then submit manually through Twitch if appropriate.", "ok");
+      debugLog("manual report draft copied; no report was submitted");
     } catch (e) {
-      setStatus("error: " + e.message, "err");
-      err(e);
-    } finally {
-      state.running = false;
-      updateUI();
-      persistSoon();
+      setStatus("Clipboard unavailable. Open the dashboard and copy your draft manually; no report was submitted.", "err");
+      debugLog("clipboard write failed: " + (e?.message || String(e)));
     }
   }
 
@@ -926,7 +917,7 @@
           <button class="tsr-btn tsr-btn-ghost" id="tsr-clear-file">clear file</button>
         </div>
         <div class="tsr-buttons">
-          <button class="tsr-btn tsr-btn-primary" id="tsr-run">run</button>
+          <button class="tsr-btn tsr-btn-primary" id="tsr-run">copy draft</button>
           <button class="tsr-btn tsr-btn-secondary" id="tsr-stop" disabled>stop</button>
           <button class="tsr-btn tsr-btn-ghost" id="tsr-reset-cycles">reset cycles</button>
         </div>
