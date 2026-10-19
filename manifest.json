@@ -9,19 +9,26 @@
     "storage",
     "activeTab",
     "scripting",
-    "notifications",
-    "declarativeNetRequest"
+    "notifications"
   ],
-  "host_permissions": ["https://www.twitch.tv/*"],
+  "host_permissions": [
+    "https://www.twitch.tv/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://www.twitch.tv/*"],
-      "js": ["content.js"],
-      "css": ["panel.css"],
+      "matches": [
+        "https://www.twitch.tv/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "panel.css"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
@@ -30,5 +37,7 @@
     "page": "options.html",
     "open_in_tab": true
   },
-  "action": { "default_title": "TS Reporter (incognito only)" }
+  "action": {
+    "default_title": "TS Reporter (incognito only)"
+  }
 }
