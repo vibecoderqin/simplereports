@@ -329,9 +329,21 @@
       .replace(/"/g, "&quot;");
   }
 
-  // ============================================================
-  // NEW: Fingerprint state
-  // ============================================================
+  function downloadFile(name, text, type = "text/plain") {
+    try {
+      const blob = new Blob([text], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
+    } catch { return false; }
+  }
+
   async function refreshFingerprint() {
     let profile = null;
     let rate = null;
@@ -344,7 +356,6 @@
       }
     } catch { /* background may be down or non-incognito */ }
 
-    // Fallback: читаем напрямую
     if (!profile) {
       try {
         const sess = await chrome.storage.session.get("tsr_profile_v1");
@@ -368,7 +379,6 @@
   function wireButtons() {
     $("btn-refresh").addEventListener("click", reloadAll);
 
-    // NEW: Rotate / Clear UA
     $("btn-rotate-ua").addEventListener("click", async () => {
       try {
         const r = await chrome.runtime.sendMessage({ type: "ROTATE_UA" });
@@ -417,6 +427,18 @@
       await navigator.clipboard.writeText(text);
       flash("debug copied");
     });
+    $("btn-export-debug").addEventListener("click", async () => {
+      const data = await chrome.storage.local.get(K_DEBUG);
+      const arr = data[K_DEBUG] || [];
+      const header = [
+        "# TS-Reporter debug export",
+        "# timestamp: " + new Date().toISOString(),
+        "# lines: " + arr.length,
+        ""
+      ].join("\n");
+      const ok = downloadFile(`tsr-debug-${Date.now()}.log`, header + arr.join("\n"));
+      flash(ok ? "debug exported" : "export failed");
+    });
 
     $("btn-clear-emails").addEventListener("click", async () => {
       await chrome.storage.local.set({ [K_EMAILS]: [] });
@@ -430,6 +452,16 @@
       ).join("\n");
       await navigator.clipboard.writeText(text);
       flash("emails copied");
+    });
+    $("btn-export-emails").addEventListener("click", async () => {
+      const data = await chrome.storage.local.get(K_EMAILS);
+      const rows = data[K_EMAILS] || [];
+      const header = "ts\temail\tchannel\treason\tsubreason\tuser-agent\n";
+      const body = rows.map((r) =>
+        `${new Date(r.ts).toISOString()}\t${r.email}\t${r.channel || ""}\t${r.reason || ""}\t${r.subreason || ""}\t${r.ua || ""}`
+      ).join("\n");
+      const ok = downloadFile(`tsr-emails-${Date.now()}.tsv`, header + body);
+      flash(ok ? "emails exported" : "export failed");
     });
   }
 
@@ -457,7 +489,6 @@
       loadProgressAndTarget();
     });
 
-    // session storage (profile) — тоже слушаем
     try {
       chrome.storage.session.onChanged.addListener((changes) => {
         if (changes.tsr_profile_v1) refreshFingerprint();

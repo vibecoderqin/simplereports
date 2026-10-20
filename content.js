@@ -42,7 +42,8 @@
     currentStep: null,
     currentLine: null,
     usedSearchReason: false,
-    targetChannel: null
+    targetChannel: null,
+    challengeStrikes: 0
   };
 
   const isDebug = () => state.settings.debug !== false;
@@ -117,6 +118,34 @@
       };
       tick();
     });
+  }
+
+  async function humanPause(baseMs) {
+    const jitter = rand(-200, 400);
+    const extra = Math.random() < 0.2 ? rand(200, 800) : 0;
+    await sleepInterruptible(Math.max(100, baseMs + jitter + extra));
+    if (!state.running) return;
+    if (Math.random() < 0.3) {
+      try { window.scrollBy({ top: rand(-80, 80), behavior: "smooth" }); } catch {}
+    }
+    if (Math.random() < 0.4) {
+      try {
+        const x = rand(100, Math.max(200, window.innerWidth - 100));
+        const y = rand(100, Math.max(200, window.innerHeight - 100));
+        const el = document.elementFromPoint(x, y);
+        el?.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y, bubbles: true }));
+      } catch {}
+    }
+  }
+
+  function detectChallenge() {
+    try {
+      if (document.querySelector("[data-challenge], .challenge-container, #challenge-form, iframe[src*='kasada']")) return "kasada";
+      const body = (document.body?.innerText || "").toLowerCase();
+      if (body.includes("checking your browser") || body.includes("please wait while we verify")) return "verify";
+      if (body.includes("verify you are human") || body.includes("are you a robot")) return "captcha";
+    } catch {}
+    return null;
   }
 
   const EMAIL_PREFIXES = [
@@ -227,6 +256,167 @@
     captcha: ['iframe[src*="captcha"]', '[data-a-target="captcha"]', 'div.g-recaptcha']
   };
 
+  const REPORT_CHANNEL_PATTERNS = [
+    /report\s+channel/i,
+    /kanal\s+melden/i,
+    /kanal\s+reporten/i,
+    /signaler\s+la\s+cha[iî]ne/i,
+    /signaler\s+la\s+chaine/i,
+    /denunciar\s+(el\s+)?canal/i,
+    /segnala\s+(il\s+)?canale/i,
+    /rapporter\s+kanal/i,
+    /rapportera\s+kanal/i,
+    /rapporteer\s+kanaal/i,
+    /raportuj\s+kanał/i,
+    /пожаловаться\s+на\s+канал/i,
+    /пожаловаться/i,
+    /举报频道/,
+    /通報チャンネル/,
+    /채널\s*신고/
+  ];
+
+  const FILE_REPORT_PATTERNS = [
+    /file\s+a\s+report/i,
+    /submit\s+a\s+report/i,
+    /send\s+(a\s+)?report/i,
+    /einen\s+versto[sß]\s+melden/i,
+    /versto[sß]\s+melden/i,
+    /meldung\s+einreichen/i,
+    /bericht\s+einreichen/i,
+    /signaler\s+un\s+rapport/i,
+    /envoyer\s+un\s+rapport/i,
+    /denunciar\s+un\s+reporte/i,
+    /enviar\s+un\s+reporte/i,
+    /segnala\s+un.*segnalazione/i,
+    /invia\s+una\s+segnalazione/i,
+    /rapporter/i,
+    /rapportera/i,
+    /anmäl/i,
+    /пожаловаться/i,
+    /подать\s+жалобу/i,
+    /举报/,
+    /报告/,
+    /通報/,
+    /신고/
+  ];
+
+  const BLOCK_EXCLUDE_PATTERNS = [
+    /^block/i,
+    /^blocking/i,
+    /^blockieren/i,
+    /^blockera/i,
+    /^blocca/i,
+    /^bloquer/i,
+    /^bloquear/i,
+    /^bloc\b/i,
+    /^блок/i,
+    /^заблокировать/i,
+    /^屏蔽/i,
+    /^ブロック/,
+    /^차단/,
+    /^cancel/i,
+    /^abbrechen/i,
+    /^annuler/i,
+    /^cancelar/i,
+    /^annulla/i,
+    /^avbryt/i,
+    /^annuller/i,
+    /^anuluj/i,
+    /^取消/,
+    /^キャンセル/,
+    /^취소/,
+    /^close$/i,
+    /^schlie[sß]en$/i,
+    /^fermer$/i,
+    /^cerrar$/i,
+    /^chiudi$/i,
+    /^stäng$/i,
+    /^sluiten$/i,
+    /^закрыть$/i,
+    /^закрити$/i,
+    /^关闭$/,
+    /^閉じる$/,
+    /^닫기$/
+  ];
+
+  function findClickable(patterns, scope = document, excludes = null) {
+    const pats = Array.isArray(patterns) ? patterns : [patterns];
+    const exs = excludes ? (Array.isArray(excludes) ? excludes : [excludes]) : [];
+
+    const match = (text) => {
+      if (!text) return false;
+      const t = text.trim();
+      if (!t) return false;
+      const tl = t.toLowerCase();
+      for (const ex of exs) {
+        if (ex instanceof RegExp ? ex.test(t) : (tl === String(ex).toLowerCase() || tl.includes(String(ex).toLowerCase()))) return false;
+      }
+      for (const p of pats) {
+        if (p instanceof RegExp ? p.test(t) : (tl === String(p).toLowerCase() || tl.includes(String(p).toLowerCase()))) return true;
+      }
+      return false;
+    };
+
+    for (const b of scope.querySelectorAll("button, [role='button']")) {
+      if (inPanel(b)) continue;
+      if (match(b.textContent || "")) return b;
+    }
+    for (const el of scope.querySelectorAll("span, div, a")) {
+      if (inPanel(el)) continue;
+      if (match(el.textContent || "")) {
+        const btn = el.closest("button, [role='button'], a");
+        if (btn && !inPanel(btn)) return btn;
+      }
+    }
+    return null;
+  }
+
+  function findFileReportButton() {
+    const byText = findClickable(FILE_REPORT_PATTERNS, document, BLOCK_EXCLUDE_PATTERNS);
+    if (byText) return byText;
+
+    const dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
+    for (const d of dialogs) {
+      if (inPanel(d)) continue;
+      const r = d.getBoundingClientRect();
+      if (r.width < 300 || r.height < 100) continue;
+
+      const btns = Array.from(d.querySelectorAll('button')).filter((b) => !inPanel(b));
+      const good = btns.filter((b) => {
+        const txt = (b.textContent || "").trim();
+        if (!txt) return false;
+        return !BLOCK_EXCLUDE_PATTERNS.some((ex) => ex.test(txt));
+      });
+      if (good.length === 0) continue;
+
+      if (good.length === 1) {
+        const only = good[0];
+        const headingEl = d.querySelector('h1, h2, h3, [role="heading"]');
+        const heading = (headingEl && headingEl.textContent) || "";
+        if (/block|blockieren|bloquer|bloquear|blocca|blockera/i.test(heading)) {
+          debugLog("file-report: single btn but heading is block-related — skipping");
+          continue;
+        }
+        debugLog(`file-report structural: single button "${(only.textContent || "").trim()}"`);
+        return only;
+      }
+
+      const byAt = good.find((b) => /report|submit|file/i.test(b.getAttribute("data-a-target") || ""));
+      if (byAt) {
+        debugLog(`file-report structural by data-a-target: "${(byAt.textContent || "").trim()}"`);
+        return byAt;
+      }
+
+      const byCls = good.find((b) => /primary/i.test(b.className || ""));
+      if (byCls) {
+        debugLog(`file-report structural by primary class: "${(byCls.textContent || "").trim()}"`);
+        return byCls;
+      }
+    }
+
+    return null;
+  }
+
   const CONTENT_TYPES = [
     { label: "Chat Messages", slug: "CHAT_REPORT" },
     { label: "Whispers",      slug: "WHISPER_REPORT" },
@@ -322,47 +512,41 @@
     return null;
   }
 
-  function findClickable(text, scope = document) {
-    const target = text.trim().toLowerCase();
-    for (const b of scope.querySelectorAll("button")) {
-      if (inPanel(b)) continue;
-      if ((b.textContent || "").trim().toLowerCase() === target) return b;
-    }
-    for (const b of scope.querySelectorAll('[role="button"]')) {
-      if (inPanel(b)) continue;
-      if ((b.textContent || "").trim().toLowerCase() === target) return b;
-    }
-    for (const b of scope.querySelectorAll("button")) {
-      if (inPanel(b)) continue;
-      if ((b.textContent || "").trim().toLowerCase().includes(target)) return b;
-    }
-    for (const b of scope.querySelectorAll('[role="button"]')) {
-      if (inPanel(b)) continue;
-      if ((b.textContent || "").trim().toLowerCase().includes(target)) return b;
-    }
-    for (const el of scope.querySelectorAll("span, div, a")) {
-      if (inPanel(el)) continue;
-      if ((el.textContent || "").trim().toLowerCase() === target) {
-        const btn = el.closest("button, [role='button'], a");
-        if (btn) return btn;
+  function clickRadioBySlug(name, slug, scope) {
+    if (!slug) return false;
+    const ids = [
+      `${name}-${slug}`,
+      `${name}-${slug.replace(/_/g, "-")}`,
+      `${name}-${slug.replace(/-/g, "_")}`
+    ];
+    for (const id of ids) {
+      const direct =
+        scope.querySelector(`#${CSS.escape(id)}`) ||
+        document.querySelector(`#${CSS.escape(id)}`);
+      if (direct) {
+        const label = direct.closest("label") ||
+          scope.querySelector(`label[for="${CSS.escape(id)}"]`);
+        (label || direct).click();
+        debugLog(`radio ${name} clicked by slug id "${id}"`);
+        return true;
       }
     }
-    return null;
-  }
-
-  function clickRadioBySlug(name, slug, scope) {
-    const id = `${name}-${slug}`;
-    const direct =
-      scope.querySelector(`#${CSS.escape(id)}`) ||
-      document.querySelector(`#${CSS.escape(id)}`);
-    if (direct) {
-      const label = direct.closest("label") ||
-        scope.querySelector(`label[for="${CSS.escape(id)}"]`);
-      (label || direct).click();
-      return true;
+    const inputs = scope.querySelectorAll(`input[name="${name}"]`);
+    const lower = String(slug).toLowerCase().replace(/[-\s]+/g, "_");
+    for (const inp of inputs) {
+      const iid = (inp.id || "").toLowerCase();
+      const ival = (inp.value || "").toLowerCase();
+      if (iid.includes(lower) || ival === lower) {
+        const label = inp.closest("label") ||
+          scope.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
+        (label || inp).click();
+        debugLog(`radio ${name} clicked by slug value "${inp.id || ival}"`);
+        return true;
+      }
     }
     return false;
   }
+
   function clickRadioByLabelPrefix(name, prefix, scope) {
     const inputs = scope.querySelectorAll(`input[name="${name}"]`);
     const lower = prefix.toLowerCase();
@@ -589,24 +773,49 @@
     }
   }
 
+  class ChallengeError extends Error {
+    constructor(kind) {
+      super(`challenge detected: ${kind}`);
+      this.kind = kind;
+    }
+  }
+
+  function subToSlug(subLabel) {
+    if (!subLabel) return null;
+    if (SUB_SLUG[subLabel]) return SUB_SLUG[subLabel];
+    return String(subLabel).toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+  }
+
   const STEPS = [
     {
       name: "open-menu",
       screen: "channel page (menu closed)",
       detect: () => qs(SEL.moreOptions),
-      action: async () => { qs(SEL.moreOptions).click(); }
+      action: async () => {
+        const btn = qs(SEL.moreOptions);
+        if (!btn) throw new Error("more-options button not found");
+        btn.click();
+      }
     },
     {
       name: "click-report",
       screen: "channel menu (Report item)",
-      detect: () => qs(SEL.reportChannel) || findClickable("Report Channel"),
-      action: async () => { (qs(SEL.reportChannel) || findClickable("Report Channel")).click(); }
+      detect: () => qs(SEL.reportChannel) || findClickable(REPORT_CHANNEL_PATTERNS, document, BLOCK_EXCLUDE_PATTERNS),
+      action: async () => {
+        const btn = qs(SEL.reportChannel) || findClickable(REPORT_CHANNEL_PATTERNS, document, BLOCK_EXCLUDE_PATTERNS);
+        if (!btn) throw new Error("report channel button not found");
+        btn.click();
+      }
     },
     {
       name: "click-file-report",
       screen: "'File a Report' prompt",
-      detect: () => findClickable("File a Report"),
-      action: async () => { findClickable("File a Report").click(); }
+      detect: () => findFileReportButton(),
+      action: async () => {
+        const btn = findFileReportButton();
+        if (!btn) throw new Error("file-a-report button not found");
+        btn.click();
+      }
     },
     {
       name: "wizard-content",
@@ -666,15 +875,51 @@
       action: async () => {
         const wizard = getWizard();
         if (!wizard) throw new Error("wizard not mounted");
-        const target = state.settings.subreason || state.settings.reason;
+        const sub = state.settings.subreason;
+        const target = sub || state.settings.reason;
         if (!target) throw new Error("no search target");
+
+        const slug = subToSlug(target);
+        const wantedRadio = () => {
+          if (slug) {
+            const candidates = [
+              `#reason-search-radio-group-${CSS.escape(slug)}`,
+              `#reason-search-radio-group-${CSS.escape(slug.replace(/_/g, "-"))}`,
+              `#reason-search-radio-group-${CSS.escape(slug.replace(/-/g, "_"))}`
+            ];
+            for (const c of candidates) {
+              const el = wizard.querySelector(c) || document.querySelector(c);
+              if (el) return el;
+            }
+          }
+          for (const inp of wizard.querySelectorAll('input[name="reason-search-radio-group"]')) {
+            if (slug && (inp.id || "").toLowerCase().includes(slug)) return inp;
+          }
+          return null;
+        };
+
+        const appears = await waitForInterruptible(wantedRadio, 4000, 120);
+        if (appears) {
+          if (clickRadioBySlug("reason-search-radio-group", slug, wizard)) {
+            debugLog(`search result clicked by slug "${slug}" (localized label ok)`);
+            await clickNext(); return;
+          }
+        }
+
         if (clickRadioByLabelExact("reason-search-radio-group", target, wizard)) {
           debugLog(`search result clicked: "${target}"`); await clickNext(); return;
         }
         if (clickRadioByLabelPrefix("reason-search-radio-group", target, wizard)) {
           debugLog(`search result clicked by prefix: "${target}"`); await clickNext(); return;
         }
-        throw new Error(`search result not found: "${target}"`);
+
+        const all = wizard.querySelectorAll('input[name="reason-search-radio-group"]');
+        if (all.length === 0) throw new Error(`no search results rendered (target="${target}")`);
+        const first = all[0];
+        const lbl = first.closest("label") ||
+          wizard.querySelector(`label[for="${CSS.escape(first.id)}"]`);
+        const txt = ((lbl?.textContent || "") || first.id || "").trim();
+        throw new Error(`search result not matched (slug="${slug}", label="${target}"). first result was "${txt}" — check subreason/locale`);
       }
     },
     {
@@ -692,8 +937,7 @@
         const r = REASONS[state.settings.reason];
         if (!r || r.subs.length === 0) return;
         if (!state.settings.subreason) throw new Error("reason requires a detailed reason");
-        const slug = SUB_SLUG[state.settings.subreason] ||
-          state.settings.subreason.toLowerCase().replace(/\s+/g, "_");
+        const slug = subToSlug(state.settings.subreason);
         await pickRadio("detailed-reason-select-radio", slug, state.settings.subreason);
         await clickNext();
       }
@@ -741,13 +985,24 @@
     updateProgressUI();
     debugLog(`→ step "${step.name}" — waiting for screen "${step.screen}"`);
 
+    const challenge = detectChallenge();
+    if (challenge) throw new ChallengeError(challenge);
+
     const detected = await waitForInterruptible(() => step.detect(), ctx.timeoutMs, 150);
     if (!state.running) return;
     if (detected === null) throw new StepTimeoutError(step, ctx.timeoutMs);
     if (detected === "skipped") { debugLog(`  step "${step.name}" — skipped`); return; }
+
+    const challenge2 = detectChallenge();
+    if (challenge2) throw new ChallengeError(challenge2);
+
     debugLog(`  step "${step.name}" — detected, delay ${ctx.delayMs}ms`);
     const ok = await sleepInterruptible(ctx.delayMs);
     if (!ok) return;
+
+    const challenge3 = detectChallenge();
+    if (challenge3) throw new ChallengeError(challenge3);
+
     debugLog(`  step "${step.name}" — acting`);
     await step.action();
     debugLog(`  step "${step.name}" — done`);
@@ -758,6 +1013,10 @@
     while (state.running) {
       try { await runStep(step, ctx); return; }
       catch (e) {
+        if (e instanceof ChallengeError) {
+          debugLog(`  ✖ challenge "${e.kind}" during step "${step.name}"`);
+          throw e;
+        }
         if (!(e instanceof StepTimeoutError)) throw e;
         attempt++;
         debugLog(`  ✖ step "${step.name}" timeout (attempt ${attempt}/${ctx.maxRetries})`);
@@ -806,12 +1065,25 @@
       await rotateUA();
       state.currentLine = pickDescriptionLine();
       state.usedSearchReason = false;
+      state.challengeStrikes = 0;
 
       for (const step of STEPS) {
         if (!state.running) return;
         ctx.delayMs = rand(state.settings.delayMin, state.settings.delayMax);
         try { await runStepWithRetries(step, ctx); }
         catch (e) {
+          if (e instanceof ChallengeError) {
+            state.challengeStrikes++;
+            debugLog(`✖ challenge "${e.kind}" on step "${step.name}" (strike ${state.challengeStrikes})`);
+            if (state.challengeStrikes >= 2) {
+              setStatus(`challenge detected twice — stopping`, "err");
+              await scheduleResumeAndReload(step.name);
+              return;
+            }
+            await humanPause(3000);
+            await rotateUA();
+            continue;
+          }
           if (e instanceof StepTimeoutError && state.settings.reloadOnFail) {
             debugLog(`✖ step "${step.name}" failed all retries — failsafe`);
             await scheduleResumeAndReload(step.name);

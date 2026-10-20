@@ -1,14 +1,12 @@
 {
   "manifest_version": 3,
   "name": "TS Reporter",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Incognito-only reporting helper with fingerprint anti-detect.",
   "incognito": "split",
   "minimum_chrome_version": "120",
   "permissions": [
     "storage",
-    "activeTab",
-    "scripting",
     "notifications",
     "declarativeNetRequest",
     "tabs",

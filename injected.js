@@ -1,9 +1,4 @@
 // content/injected.js — MAIN world, document_start
-// Fingerprint-хуки:
-//   1) navigator.* — согласовано с DNR-заголовками (КРИТИЧНО)
-//   2) WebRTC      — relay-only, не слём локальный IP
-//   3) Canvas      — ДЕТЕРМИНИРОВАННЫЙ шум (два toDataURL() → один хэш)
-//   4) WebGL       — vendor/renderer под платформу профиля
 (() => {
   "use strict";
 
@@ -11,14 +6,11 @@
   const CFG    = { profile: null };
   let uaDataCache = new WeakMap();
 
-  // ---- Sync init из localStorage (пишется isolated.js).
-  // Убирает окно утечки на всех перезагрузках, кроме самой первой.
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) CFG.profile = JSON.parse(raw);
   } catch { /* ignore */ }
 
-  // ---- Live-update: postMessage от isolated.js.
   window.addEventListener("message", (ev) => {
     if (ev.source !== window) return;
     const d = ev.data;
@@ -29,7 +21,6 @@
     }
   }, true);
 
-  // ---- Cross-tab sync через storage event.
   window.addEventListener("storage", (e) => {
     if (e.key !== LS_KEY) return;
     try {
@@ -40,10 +31,6 @@
     uaDataCache = new WeakMap();
   });
 
-  // ============================================================
-  // 1. NAVIGATOR — UA / appVersion / platform / vendor / userAgentData
-  //    Всё это должно совпадать с тем, что DNR шлёт на проводе.
-  // ============================================================
   (function patchNavigator() {
     if (typeof Navigator === "undefined" || !Navigator.prototype) return;
     const NavProto = Navigator.prototype;
@@ -73,8 +60,15 @@
     redefine("vendor",     (orig) => function () {
       return CFG.profile ? CFG.profile.vendor : orig.call(this);
     });
+    redefine("language",   (orig) => function () {
+      const langs = CFG.profile && CFG.profile.languages;
+      return langs && langs.length ? langs[0] : orig.call(this);
+    });
+    redefine("languages",  (orig) => function () {
+      const langs = CFG.profile && CFG.profile.languages;
+      return langs && langs.length ? Object.freeze(langs.slice()) : orig.call(this);
+    });
 
-    // userAgentData: Chrome отдаёт, Firefox/Safari — нет.
     const uaDesc = Object.getOwnPropertyDescriptor(NavProto, "userAgentData");
     if (uaDesc && typeof uaDesc.get === "function") {
       const origGet = uaDesc.get;
@@ -133,11 +127,6 @@
     }
   })();
 
-  // ============================================================
-  // 2. WebRTC — relay-only (не сливаем локальный IP)
-  //    NB: без TURN-сервера WebRTC не подключится вообще — это цена
-  //    за анти-детект. Для чата/репортов ок.
-  // ============================================================
   const RTC = window.RTCPeerConnection;
   if (typeof RTC === "function") {
     const Patched = function (config, ...rest) {
@@ -151,13 +140,6 @@
     try { window.RTCPeerConnection = Patched; } catch { /* ignore */ }
   }
 
-  // ============================================================
-  // 3. Canvas — ДЕТЕРМИНИРОВАННЫЙ шум.
-  //    Сид = (ширина, высота) + session salt. Оригинальный canvas
-  //    не мутируется — рисуем в offscreen scratch и сериализуем его.
-  //    Результат: canvas.toDataURL() дважды → ОДИН и тот же хэш
-  //    (как у настоящего браузера), но отличается от «чистого».
-  // ============================================================
   let sessionSalt = 0;
   try {
     const s = localStorage.getItem("__tsr_salt_v1");
@@ -179,7 +161,7 @@
 
   function addDetNoise(data, seed) {
     let s = (seed || 1) >>> 0;
-    const step = 4 * 500; // ~1 пиксель на 500
+    const step = 4 * 500;
     for (let i = 0; i < data.length; i += step) {
       s = (Math.imul(s, 1103515245) + 12345) >>> 0;
       const bit = (s & 1) ? 1 : -1;
@@ -193,7 +175,7 @@
     let img;
     try {
       img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    } catch { return serializer(canvas); } // tainted canvas
+    } catch { return serializer(canvas); }
     addDetNoise(img.data, hash32(canvas.width + "x" + canvas.height));
     const off = document.createElement("canvas");
     off.width = canvas.width;
@@ -219,9 +201,6 @@
     };
   }
 
-  // ============================================================
-  // 4. WebGL — vendor/renderer под платформу профиля
-  // ============================================================
   const SPOOF_BY_PLATFORM = {
     Windows: {
       vendor:   "Google Inc. (NVIDIA)",

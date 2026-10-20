@@ -14,16 +14,14 @@ const PROGRESS_KEY = "tsr_progress_v1";
 const DEBUG_KEY    = "tsr_debug_v1";
 const EMAILS_KEY   = "tsr_emails_v1";
 const RESUME_KEY   = "tsr_resume_v1";
-const PROFILE_KEY  = "tsr_profile_v1";        // session-only
+const PROFILE_KEY  = "tsr_profile_v1";
 const ROT_KEY      = "tsr_last_rotate_v1";
 const CAPACITY     = 3;
 const WINDOW_MS    = 3600000;
-const REFILL_MS    = WINDOW_MS / CAPACITY;    // 20 минут
-const ROT_MIN_MS   = 30 * 60 * 1000;          // не чаще 30 минут
-const ROT_PROB     = 0.15;                    // вероятность на навигацию
+const REFILL_MS    = WINDOW_MS / CAPACITY;
+const ROT_MIN_MS   = 30 * 60 * 1000;
+const ROT_PROB     = 0.15;
 
-// Domains that Twitch actually talks to during a session.
-// Spoofed on ALL requests to these — otherwise XHR/fonts/scripts leak the real UA.
 const SPOOF_DOMAINS = [
   "twitch.tv",
   "jtvnw.net",
@@ -32,7 +30,14 @@ const SPOOF_DOMAINS = [
   "live-video.net"
 ];
 
-// ---------- Debug ----------
+const LANG_POOL = [
+  { code: "en-US", tag: "en-US,en;q=0.9",            list: ["en-US", "en"] },
+  { code: "en-GB", tag: "en-GB,en;q=0.9",            list: ["en-GB", "en"] },
+  { code: "de-DE", tag: "de-DE,de;q=0.9,en;q=0.8",   list: ["de-DE", "de", "en"] },
+  { code: "fr-FR", tag: "fr-FR,fr;q=0.9,en;q=0.8",   list: ["fr-FR", "fr", "en"] },
+  { code: "es-ES", tag: "es-ES,es;q=0.9,en;q=0.8",   list: ["es-ES", "es", "en"] }
+];
+
 let debugEnabled = false;
 async function loadDebugSetting() {
   try {
@@ -47,7 +52,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 function log(...args) { if (debugEnabled) console.log("[TS-Reporter/BG]", ...args); }
 
-// ---------- Incognito ----------
 function isIncognitoContext() {
   try { return chrome.extension.inIncognitoContext === true; } catch { return false; }
 }
@@ -55,12 +59,7 @@ function isIncognitoSender(sender) {
   return sender?.tab?.incognito === true || isIncognitoContext();
 }
 
-// ---------- Профили ----------
-// version — полная версия с билдом (Chrome/Chromium использует в UA и full-version-list).
-// major   — только мажор (используется в sec-ch-ua и в brands[].version).
-// build numbers подобраны как «реалистично-предыдущие» относительно 155.0.8059.79.
 const PROFILES = [
-  // ---------------- Chrome on Windows ----------------
   {
     browser: "chrome", platform: "Windows", mobile: false,
     version: "154.0.7988.92", ua:
@@ -76,7 +75,6 @@ const PROFILES = [
     version: "152.0.7891.115", ua:
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7891.115 Safari/537.36"
   },
-  // ---------------- Chrome on macOS ----------------
   {
     browser: "chrome", platform: "macOS", mobile: false,
     version: "154.0.7988.92", ua:
@@ -87,7 +85,6 @@ const PROFILES = [
     version: "153.0.7932.76", ua:
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7932.76 Safari/537.36"
   },
-  // ---------------- Chrome on Linux ----------------
   {
     browser: "chrome", platform: "Linux", mobile: false,
     version: "154.0.7988.92", ua:
@@ -98,7 +95,6 @@ const PROFILES = [
     version: "153.0.7932.76", ua:
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7932.76 Safari/537.36"
   },
-  // ---------------- Firefox ----------------
   {
     browser: "firefox", platform: "Windows", mobile: false,
     version: "156.0", ua:
@@ -119,7 +115,6 @@ const PROFILES = [
     version: "156.0", ua:
     "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0"
   },
-  // ---------------- Safari ----------------
   {
     browser: "safari", platform: "macOS", mobile: false,
     version: "27.0", ua:
@@ -132,7 +127,6 @@ const PROFILES = [
   }
 ];
 
-// Derive everything JS-side needs from the profile. Called once per pick.
 function enrichProfile(p) {
   const major = String(p.version).split(".")[0];
   const platformName =
@@ -142,6 +136,7 @@ function enrichProfile(p) {
   const vendor =
     p.browser === "chrome" ? "Google Inc." :
     p.browser === "safari" ? "Apple Computer, Inc." : "";
+  const lang = LANG_POOL[(Math.random() * LANG_POOL.length) | 0];
   const out = {
     browser: p.browser,
     platform: p.platform,
@@ -151,7 +146,9 @@ function enrichProfile(p) {
     ua: p.ua,
     appVersion: p.ua.replace(/^Mozilla\//, ""),
     platformName,
-    vendor
+    vendor,
+    languages: lang.list.slice(),
+    acceptLanguage: lang.tag
   };
   if (p.browser === "chrome") {
     out.uaBrands = [
@@ -176,7 +173,6 @@ function enrichProfile(p) {
   return out;
 }
 
-// анти-повтор: не выдаём один и тот же UA дважды подряд
 let lastUa = null;
 async function pickProfile() {
   if (!lastUa) {
@@ -191,8 +187,6 @@ async function pickProfile() {
   return enrichProfile(raw);
 }
 
-// ---------- Заголовки ----------
-// Формат соответствовует Chrome 130+: "Chromium";v="X", "Not(A:Brand";v="24", "Google Chrome";v="X"
 function buildSecChUa(major, grease) {
   return `"Chromium";v="${major}", "Not(A:Brand";v="${grease}", "Google Chrome";v="${major}"`;
 }
@@ -202,9 +196,8 @@ function buildFullVersionList(fullVersion, grease) {
 
 function buildRequestHeaders(profile) {
   const headers = [
-    { header: "user-agent", operation: "set", value: profile.ua }
-    // Accept-Language НЕ трогаем: у реального пользователя оно консистентно
-    // и совпадает с navigator.languages. Рандомизация — это сигнал.
+    { header: "user-agent", operation: "set", value: profile.ua },
+    { header: "accept-language", operation: "set", value: profile.acceptLanguage }
   ];
 
   if (profile.browser === "chrome") {
@@ -224,8 +217,6 @@ function buildRequestHeaders(profile) {
     );
   }
 
-  // Safari (все актуальные версии) не отправляет Sec-Fetch-*.
-  // Firefox — отправляет, как и Chrome. Поэтому режем только для Safari.
   if (profile.browser === "safari") {
     headers.push(
       { header: "sec-fetch-site", operation: "remove" },
@@ -238,13 +229,9 @@ function buildRequestHeaders(profile) {
   return headers;
 }
 
-// ---------- DNR-правила ----------
 async function applyProfile(profile) {
   const headers = buildRequestHeaders(profile);
 
-  // Одно правило, несколько доменов, БЕЗ ограничения по resourceTypes.
-  // Это ключевое исправление: иначе XHR/script/font/websocket/image запросы
-  // уходят с реальным UA и вскрывают спуф.
   const rules = [
     {
       id: RULE_ID_MAIN,
@@ -263,8 +250,6 @@ async function applyProfile(profile) {
 
   try { await chrome.storage.session.set({ [PROFILE_KEY]: profile }); } catch { /* ignore */ }
 
-  // Push to all incognito tabs so the panel and injected.js update live.
-  // This is how we avoid stale JS-fingerprint after a rotate.
   try {
     const tabs = await chrome.tabs.query({});
     for (const t of tabs) {
@@ -273,7 +258,7 @@ async function applyProfile(profile) {
     }
   } catch (e) { log("profile broadcast failed", e); }
 
-  log("profile applied:", profile.browser, profile.major, profile.platform, "→", profile.version);
+  log("profile applied:", profile.browser, profile.major, profile.platform, "→", profile.version, profile.acceptLanguage);
 }
 
 async function clearRules() {
@@ -283,7 +268,6 @@ async function clearRules() {
     });
   } catch (e) { log("clearSessionRules failed", e); }
   try { await chrome.storage.session.remove(PROFILE_KEY); } catch { /* ignore */ }
-  // Tell every incognito tab that spoofing is gone.
   try {
     const tabs = await chrome.tabs.query({});
     for (const t of tabs) {
@@ -300,7 +284,6 @@ async function migrateLegacyDynamicRules() {
   } catch (e) { log("legacy migration skipped", e); }
 }
 
-// ---------- Rate limiter ----------
 async function acquireReportToken() {
   const now = Date.now();
   const stored = await chrome.storage.local.get(RATE_KEY);
@@ -320,7 +303,6 @@ async function acquireReportToken() {
   return { ok: true, remaining: bucket.tokens };
 }
 
-// ---------- Персистентное состояние ----------
 async function writeProgress(payload) { await chrome.storage.local.set({ [PROGRESS_KEY]: payload }); }
 async function appendDebug(line) {
   const s = await chrome.storage.local.get(DEBUG_KEY);
@@ -344,7 +326,6 @@ async function readState() {
   return { ...data, currentProfile: profile, rate: data[RATE_KEY] || null };
 }
 
-// ---------- Уведомления ----------
 const FALLBACK_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 function notify(title, message) {
@@ -358,10 +339,7 @@ function notify(title, message) {
   } catch (e) { log("notifications.create failed", e); }
 }
 
-// ---------- Bootstrap ----------
 async function ensureSessionStorageAccess() {
-  // Without this, chrome.storage.session is not readable from content scripts.
-  // We need it so isolated.js can fetch the current profile without asking background.
   try {
     await chrome.storage.session.setAccessLevel({
       accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS"
@@ -385,7 +363,6 @@ async function bootstrap() {
   } catch (e) { log("bootstrap failed", e); }
 }
 
-// ---------- Авто-ротация на навигации ----------
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   if (!tab?.incognito) return;
   if (info.status !== "complete") return;
@@ -404,7 +381,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   } catch (e) { log("auto-rotate failed", e); }
 });
 
-// ---------- Сообщения ----------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return false;
 
@@ -413,7 +389,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
   if (msg.type === "GET_PROFILE") {
-    // Fallback для content-скриптов, у которых не сработал setAccessLevel
     chrome.storage.session.get(PROFILE_KEY)
       .then(d => sendResponse({ ok: true, profile: d[PROFILE_KEY] || null }))
       .catch(e => sendResponse({ ok: false, error: String(e) }));
@@ -486,7 +461,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// ---------- Lifecycle ----------
 chrome.runtime.onInstalled.addListener(() => { log("installed"); bootstrap(); });
 chrome.runtime.onStartup.addListener(() => { log("startup"); bootstrap(); });
 chrome.windows.onCreated.addListener((win) => {
