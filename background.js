@@ -381,6 +381,50 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   } catch (e) { log("auto-rotate failed", e); }
 });
 
+async function openDashboard(sender) {
+  let url;
+  try {
+    url = chrome.runtime.getURL("options.html");
+  } catch (e) {
+    return { ok: false, error: "getURL failed: " + (e?.message || String(e)) };
+  }
+
+  const attempts = [];
+  if (typeof sender?.tab?.windowId === "number") {
+    attempts.push({ url, active: true, windowId: sender.tab.windowId });
+  }
+  attempts.push({ url, active: true });
+
+  let lastErr = null;
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      const t = await chrome.tabs.create(attempts[i]);
+      log("dashboard opened via tabs.create (attempt " + (i + 1) + ")", { tabId: t?.id, url });
+      return { ok: true, tabId: t?.id, url };
+    } catch (e) {
+      lastErr = e;
+      log("tabs.create attempt " + (i + 1) + " failed:", e?.message || String(e));
+    }
+  }
+
+  try {
+    const winOpts = { url, focused: true };
+    if (isIncognitoContext()) winOpts.incognito = true;
+    const w = await chrome.windows.create(winOpts);
+    log("dashboard opened via windows.create", { windowId: w?.id, url });
+    return { ok: true, windowId: w?.id, url };
+  } catch (e) {
+    log("windows.create failed:", e?.message || String(e));
+    if (!lastErr) lastErr = e;
+  }
+
+  return {
+    ok: false,
+    error: lastErr ? (lastErr.message || String(lastErr)) : "unknown",
+    url
+  };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg !== "object") return false;
 
@@ -428,12 +472,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     }
     case "OPEN_DASHBOARD": {
-      const url = chrome.runtime.getURL("options.html");
-      const opts = { url, active: true };
-      if (typeof sender?.tab?.windowId === "number") opts.windowId = sender.tab.windowId;
-      chrome.tabs.create(opts)
-        .then(t => sendResponse({ ok: true, tabId: t?.id }))
-        .catch(e => { log("tabs.create failed", e); sendResponse({ ok: false, error: String(e) }); });
+      (async () => {
+        try {
+          const result = await openDashboard(sender);
+          sendResponse(result);
+        } catch (e) {
+          log("openDashboard fatal:", e?.message || String(e));
+          sendResponse({ ok: false, error: String(e?.message || e) });
+        }
+      })();
       return true;
     }
     case "ACQUIRE_TOKEN": {

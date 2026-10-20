@@ -14,7 +14,7 @@
   const K_DEBUG    = "tsr_debug_v1";
   const K_EMAILS   = "tsr_emails_v1";
 
-  const DEBUG_LIMIT = 500;
+  const DEBUG_LIMIT = 800;
   const EMAIL_LIMIT = 2000;
   const RESUME_SETTLE_MS = 3000;
   const POST_CLOSE_SETTLE_MS = 800;
@@ -148,6 +148,15 @@
     return null;
   }
 
+  function detectLanguageHint() {
+    try {
+      const html = document.documentElement.getAttribute("lang") || "";
+      if (html) return html.toLowerCase();
+      const nav = (navigator.language || "").toLowerCase();
+      return nav;
+    } catch { return "en"; }
+  }
+
   const EMAIL_PREFIXES = [
     "user", "usr", "mail", "inbox", "contact", "acc", "account",
     "member", "reg", "signup", "hello", "info", "no-reply", "support",
@@ -223,11 +232,24 @@
     moreOptions: [
       'button[data-a-target="report-button-more-button"]',
       'button[aria-label="More options"]',
+      'button[aria-label="Plus d\'options"]',
+      'button[aria-label="Más opciones"]',
+      'button[aria-label="Mais opções"]',
+      'button[aria-label="Weitere Optionen"]',
+      'button[aria-label="Altre opzioni"]',
+      'button[aria-label="Дополнительные параметры"]',
       'button[title="More options"]'
     ],
     reportChannel: [
       'button[data-a-target="report-button-report-button"]',
-      'button[aria-label="Report Channel"]'
+      'button[aria-label="Report Channel"]',
+      'button[aria-label="Signaler la chaîne"]',
+      'button[aria-label="Denunciar el canal"]',
+      'button[aria-label="Informar sobre el canal"]',
+      'button[aria-label="Denunciar canal"]',
+      'button[aria-label="Kanal melden"]',
+      'button[aria-label="Segnala il canale"]',
+      'button[aria-label="Пожаловаться на канал"]'
     ],
     contentRadio: 'input[name="content-select-radio-group"]',
     reasonRadio:  'input[name="reason-select-radio-group"]',
@@ -256,22 +278,33 @@
     captcha: ['iframe[src*="captcha"]', '[data-a-target="captcha"]', 'div.g-recaptcha']
   };
 
+  const CHANNEL_BTN_TARGET = "report-button-report-button";
+
   const REPORT_CHANNEL_PATTERNS = [
     /report\s+channel/i,
+    /report\s+.*channel/i,
     /kanal\s+melden/i,
     /kanal\s+reporten/i,
+    /kanal\s+berichten/i,
+    /über\s+.*kanal\s+berichten/i,
     /signaler\s+la\s+cha[iî]ne/i,
     /signaler\s+la\s+chaine/i,
+    /signaler\s+.*cha[iî]ne/i,
     /denunciar\s+(el\s+)?canal/i,
+    /informar\s+sobre\s+(el\s+)?canal/i,
+    /reportar\s+(o\s+)?canal/i,
+    /denunciar\s+canal/i,
     /segnala\s+(il\s+)?canale/i,
     /rapporter\s+kanal/i,
     /rapportera\s+kanal/i,
     /rapporteer\s+kanaal/i,
     /raportuj\s+kanał/i,
+    /raportuj\s+kanal/i,
+    /kanalı\s+şikayet\s+et/i,
     /пожаловаться\s+на\s+канал/i,
-    /пожаловаться/i,
     /举报频道/,
     /通報チャンネル/,
+    /チャンネルを報告/,
     /채널\s*신고/
   ];
 
@@ -279,25 +312,39 @@
     /file\s+a\s+report/i,
     /submit\s+a\s+report/i,
     /send\s+(a\s+)?report/i,
-    /einen\s+versto[sß]\s+melden/i,
-    /versto[sß]\s+melden/i,
+    /report\s+user/i,
+    /file\s+report/i,
+    /create\s+report/i,
+    /eine\s+meldung\s+einreichen/i,
     /meldung\s+einreichen/i,
     /bericht\s+einreichen/i,
-    /signaler\s+un\s+rapport/i,
+    /einen\s+versto[sß]\s+melden/i,
+    /versto[sß]\s+melden/i,
+    /envoyer\s+un\s+signalement/i,
     /envoyer\s+un\s+rapport/i,
-    /denunciar\s+un\s+reporte/i,
+    /signaler\s+un\s+rapport/i,
+    /signaler\s+un\s+signalement/i,
+    /enviar\s+un\s+informe/i,
     /enviar\s+un\s+reporte/i,
-    /segnala\s+un.*segnalazione/i,
+    /denunciar\s+un\s+reporte/i,
+    /enviar\s+uma\s+den[uú]ncia/i,
+    /enviar\s+den[uú]ncia/i,
     /invia\s+una\s+segnalazione/i,
-    /rapporter/i,
-    /rapportera/i,
+    /invia\s+un.*segnalazione/i,
+    /segnala\s+un.*segnalazione/i,
+    /skicka\s+en\s+anmälan/i,
     /anmäl/i,
-    /пожаловаться/i,
     /подать\s+жалобу/i,
+    /отправить\s+жалобу/i,
+    /пожаловаться/i,
+    /сообщить\s+о\s+нарушении/i,
     /举报/,
     /报告/,
     /通報/,
-    /신고/
+    /報告/,
+    /신고/,
+    /şikayet\s+et/i,
+    /bildir/i
   ];
 
   const BLOCK_EXCLUDE_PATTERNS = [
@@ -314,6 +361,7 @@
     /^屏蔽/i,
     /^ブロック/,
     /^차단/,
+    /^engelle/i,
     /^cancel/i,
     /^abbrechen/i,
     /^annuler/i,
@@ -322,6 +370,7 @@
     /^avbryt/i,
     /^annuller/i,
     /^anuluj/i,
+    /^iptal/i,
     /^取消/,
     /^キャンセル/,
     /^취소/,
@@ -336,8 +385,178 @@
     /^закрити$/i,
     /^关闭$/,
     /^閉じる$/,
-    /^닫기$/
+    /^닫기$/,
+    /^kapat$/i,
+    /^anmelden$/i,
+    /^einloggen$/i,
+    /^log\s*in$/i,
+    /^login$/i,
+    /^sign\s*in$/i,
+    /^sign\s*up$/i,
+    /^register$/i,
+    /^registrieren$/i,
+    /^s'?inscrire$/i,
+    /^connexion$/i,
+    /^se\s+connecter$/i,
+    /^iniciar\s+sesi[oó]n$/i,
+    /^entrar$/i,
+    /^accedi$/i,
+    /^acceder$/i,
+    /^войти$/i,
+    /^вход$/i,
+    /^注册$/,
+    /^ログイン$/,
+    /^로그인$/i,
+    /^giri[sş]\s+yap$/i
   ];
+
+  const REASON_LABELS_I18N = {
+    "Ban Evasion": [
+      "Ban Evasion", "Contournement de bannissement", "Contournement de ban",
+      "Evasão de banimento", "Evasão de ban", "Umgehung einer Sperre",
+      "Sperrumgehung", "Elusión de expulsión", "Evasione del ban",
+      "Обход блокировки", "Обход бана", "Narı i̇hlali", "Yasak atlatma",
+      "规避封禁", "封鎖回避", "밴 회피"
+    ],
+    "Bullying or Harassment": [
+      "Bullying or Harassment", "Intimidation ou harcèlement",
+      "Bullying ou assédio", "Assédio", "Mobbing oder Belästigung",
+      "Belästigung", "Acoso o intimidación", "Acoso", "Bullismo o molestie",
+      "Моббинг или домогательства", "Домогательства", "Taciz veya zorbalık",
+      "Zorbalık", "欺凌或骚扰", "いじめ・嫌がらせ", "괴롭힘 또는 괴롭힘"
+    ],
+    "Cheating in Game": [
+      "Cheating in Game", "Triche en jeu", "Trapaça no jogo",
+      "Cheating im Spiel", "Schummeln", "Hacer trampa en el juego",
+      "Trucchi nel gioco", "Читерство в игре", "Читерство", "Oyunda hile",
+      "游戏作弊", "ゲームでのチート", "게임 내 부정행위"
+    ],
+    "Explicit Harm": [
+      "Explicit Harm", "Préjudice explicite", "Dano explícito",
+      "Explizite Schädigung", "Daño explícito", "Danno esplicito",
+      "Явный вред", "Açık zarar", "明确的伤害", "明示的な危害", "명백한 피해"
+    ],
+    "Hateful Conduct": [
+      "Hateful Conduct", "Conduite haineuse", "Conduta de ódio",
+      "Hasserfülltes Verhalten", "Hassverhalten", "Conducta de odio",
+      "Condotta d'odio", "Odio", "Враждебное поведение",
+      "Nefret içerikli davranış", "Nefret söylemi", "仇恨行为",
+      "ヘイト行為", "혐오 행위"
+    ],
+    "IP Violation": [
+      "IP Violation", "Violation de propriété intellectuelle",
+      "Violação de PI", "Urheberrechtsverletzung", "IP-Verletzung",
+      "Violación de PI", "Violazione di PI", "Нарушение прав ИС",
+      "Fikri mülkiyet ihlali", "侵犯知识产权", "知的財産権の侵害", "지식 재산권 침해"
+    ],
+    "Impersonation": [
+      "Impersonation", "Usurpation d'identité", "Personificação",
+      "Identitätstäuschung", "Impersonación", "Impersonificazione",
+      "Выдача себя за другого", "Kimliğe bürünme", "冒充他人",
+      "なりすまし", "사칭"
+    ],
+    "Misinformation": [
+      "Misinformation", "Désinformation", "Desinformação",
+      "Fehlinformation", "Desinformación", "Disinformazione",
+      "Дезинформация", "Yanlış bilgi", "虚假信息", "誤情報", "허위 정보"
+    ],
+    "Nudity or Sexually Explicit": [
+      "Nudity or Sexually Explicit", "Nudité ou contenu sexuellement explicite",
+      "Nudez ou conteúdo sexualmente explícito", "Nacktheit oder sexuell explizite Inhalte",
+      "Nudez o contenido sexual explícito", "Nudità o contenuti sessualmente espliciti",
+      "Нагота или откровенно сексуальный контент", "Çıplaklık veya cinsel içerik",
+      "裸体或露骨色情内容", "裸体または性的に露骨な表現", "노출 또는 성적으로 노골적인 콘텐츠"
+    ],
+    "Off Twitch Behavior": [
+      "Off Twitch Behavior", "Comportement hors Twitch",
+      "Comportamento fora da Twitch", "Verhalten außerhalb von Twitch",
+      "Comportamiento fuera de Twitch", "Comportamento fuori da Twitch",
+      "Поведение за пределами Twitch", "Twitch dışı davranış",
+      "Twitch 平台外的行为", "Twitch 外での行為", "Twitch 외 행동"
+    ],
+    "Self-Harm": [
+      "Self-Harm", "Automutilation", "Automutilação",
+      "Selbstverletzung", "Selbstverletzendes Verhalten",
+      "Autolesión", "Autolesionismo",
+      "Самоповреждение", "Kendine zarar verme", "自残", "自傷行為", "자해"
+    ],
+    "Spam, Scams, Bots, or Tampering": [
+      "Spam, Scams, Bots, or Tampering", "Spam, arnaques, bots ou manipulation",
+      "Spam, golpes, bots ou manipulação", "Spam, Betrug, Bots oder Manipulation",
+      "Spam, escroquerie, bots, altération de fichiers",
+      "Spam, estafas, bots o manipulación", "Spam, truffe, bot o manomissione",
+      "Спам, мошенничество, боты или вмешательство", "Spam, dolandırıcılık, botlar veya kurcalama",
+      "垃圾信息、诈骗、机器人或篡改", "スパム、詐欺、ボット、改ざん", "스팸, 사기, 봇 또는 변조"
+    ],
+    "Terrorism": [
+      "Terrorism", "Terrorisme", "Terrorismo", "Terrorismus",
+      "Терроризм", "Terörizm", "恐怖主义", "テロリズム", "테러리즘"
+    ],
+    "Underage User": [
+      "Underage User", "Utilisateur mineur", "Usuário menor de idade",
+      "Minderjähriger Nutzer", "Usuario menor de edad", "Utente minorenne",
+      "Несовершеннолетний пользователь", "Reşit olmayan kullanıcı",
+      "未成年用户", "未成年ユーザー", "미성년자 사용자"
+    ],
+    "Violence or Gore": [
+      "Violence or Gore", "Violence ou contenu sanglant", "Violência ou conteúdo sangrento",
+      "Gewalt oder Blut", "Gewalt oder Gore", "Violencia o sangre", "Violenza o sangue",
+      "Насилие или жестокость", "Şiddet veya vahşet", "暴力或血腥",
+      "暴力または流血", "폭력 또는 유혈"
+    ],
+    "Other Illegality": [
+      "Other Illegality", "Autre activité illégale", "Outra ilegalidade",
+      "Sonstige Illegalität", "Otra ilegalidad", "Altra illegalità",
+      "Иная незаконная деятельность", "Diğer yasa dışılık", "其他违法行为",
+      "その他の違法行為", "기타 불법 행위"
+    ]
+  };
+
+  const SUB_LABELS_I18N = {
+    "Account Ban Evasion": ["Account Ban Evasion", "Contournement de bannissement de compte", "Evasão de banimento de conta"],
+    "Aiding Ban Evasion": ["Aiding Ban Evasion", "Aide au contournement de bannissement", "Auxílio à evasão de banimento"],
+    "Advocating Harassment": ["Advocating Harassment", "Incitation au harcèlement", "Incentivo ao assédio"],
+    "Coordinating Harassment": ["Coordinating Harassment", "Coordination de harcèlement", "Coordenação de assédio"],
+    "Malicious Pranks": ["Malicious Pranks", "Farces malveillantes", "Pegadinhas maliciosas"],
+    "Revealing Personal Information": ["Revealing Personal Information", "Divulgation d'informations personnelles", "Divulgação de informações pessoais", "Doxxing"],
+    "Targeted Abuse": ["Targeted Abuse", "Abus ciblé", "Abuso direcionado"],
+    "Unwanted Sexual Advances": ["Unwanted Sexual Advances", "Avances sexuelles non désirées", "Avanços sexuais indesejados"],
+    "Animal Endangerment": ["Animal Endangerment", "Mise en danger d'animaux", "Colocando animais em perigo"],
+    "Child Endangerment": ["Child Endangerment", "Mise en danger d'enfants", "Colocando crianças em perigo"],
+    "Swatting": ["Swatting", "Swatting", "Swatting"],
+    "Slurs or Symbols": ["Slurs or Symbols", "Insultes ou symboles", "Injúrias ou símbolos"],
+    "Encouraging Hateful Behavior": ["Encouraging Hateful Behavior", "Encouragement au comportement haineux", "Incentivo a comportamento de ódio"],
+    "Threatening Violence": ["Threatening Violence", "Menaces de violence", "Ameaças de violência"],
+    "Mocking Trauma": ["Mocking Trauma", "Moquerie du traumatisme", "Zombaria de trauma"],
+    "Sexually Explicit": ["Sexually Explicit", "Sexuellement explicite", "Sexualmente explícito"],
+    "Sexual Violence": ["Sexual Violence", "Violence sexuelle", "Violência sexual"],
+    "Full or Partial Nudity": ["Full or Partial Nudity", "Nudité totale ou partielle", "Nudez total ou parcial"],
+    "Sexual Conduct Involving Minors": ["Sexual Conduct Involving Minors", "Conduite sexuelle impliquant des mineurs", "Conduta sexual envolvendo menores"],
+    "Sharing Private Images": ["Sharing Private Images", "Partage d'images privées", "Compartilhamento de imagens privadas"],
+    "Intentional Self-Harm": ["Intentional Self-Harm", "Automutilation intentionnelle", "Automutilação intencional"],
+    "Threatening Self-Harm": ["Threatening Self-Harm", "Menace d'automutilation", "Ameaça de automutilação"],
+    "Encouraging Others to Self-Harm": ["Encouraging Others to Self-Harm", "Encouragement d'autrui à l'automutilation", "Incentivo a outros à automutilação"],
+    "Spam": ["Spam", "Spam", "Spam"],
+    "Scam": ["Scam", "Arnaque", "Golpe"],
+    "Bots": ["Bots", "Bots", "Bots"],
+    "Cyber Attack": ["Cyber Attack", "Cyberattaque", "Ataque cibernético"],
+    "Viewership Tampering": ["Viewership Tampering", "Manipulation des audiences", "Manipulação de audiência"]
+  };
+
+  const CONTENT_LABELS_I18N = {
+    "Chat Messages": ["Chat Messages", "Messages de chat", "Mensagens de chat", "Chat-Nachrichten", "Mensajes de chat", "Messaggi in chat"],
+    "Whispers": ["Whispers", "Chuchotements", "Sussurros", "Flüstern", "Susurros", "Sussurri"],
+    "Username": ["Username", "Nom d'utilisateur", "Nome de usuário", "Benutzername", "Nombre de usuario", "Nome utente"],
+    "User (Avatar, Channel Points, Panels, Tags, etc.)": [
+      "User (Avatar, Channel Points, Panels, Tags, etc.)",
+      "Utilisateur (avatar, points de chaîne, panneaux, tags, etc.)",
+      "Usuário (avatar, pontos do canal, painéis, tags, etc.)",
+      "Benutzer (Avatar, Kanalpunkte, Panels, Tags usw.)",
+      "Usuario (avatar, puntos de canal, paneles, etiquetas, etc.)",
+      "Utente (avatar, punti canale, pannelli, tag, ecc.)"
+    ],
+    "Off Twitch Behavior": ["Off Twitch Behavior", "Comportement hors Twitch", "Comportamento fora da Twitch"]
+  };
 
   function findClickable(patterns, scope = document, excludes = null) {
     const pats = Array.isArray(patterns) ? patterns : [patterns];
@@ -371,11 +590,40 @@
     return null;
   }
 
+  function describeButton(b) {
+    const txt = (b.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60);
+    const at = b.getAttribute("data-a-target") || "";
+    const aria = b.getAttribute("aria-label") || "";
+    const cls = (b.className || "").toString().slice(0, 60);
+    const id = b.id || "";
+    return `{text="${txt}", at="${at}", aria="${aria}", cls="${cls}", id="${id}"}`;
+  }
+
+  function isChannelReportButton(b) {
+    if (!b) return false;
+    if (b.getAttribute("data-a-target") === CHANNEL_BTN_TARGET) return true;
+    const txt = (b.textContent || "").trim();
+    if (!txt) return false;
+    for (const p of REPORT_CHANNEL_PATTERNS) {
+      if (p.test(txt)) return true;
+    }
+    return false;
+  }
+
   function findFileReportButton() {
+    debugLog("findFileReportButton: scanning for report-prompt button…");
+
     const byText = findClickable(FILE_REPORT_PATTERNS, document, BLOCK_EXCLUDE_PATTERNS);
-    if (byText) return byText;
+    if (byText && !isChannelReportButton(byText)) {
+      debugLog(`findFileReportButton: matched by text ${describeButton(byText)}`);
+      return byText;
+    }
+    if (byText && isChannelReportButton(byText)) {
+      debugLog(`findFileReportButton: skipping channel-report button ${describeButton(byText)} — going structural`);
+    }
 
     const dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
+    debugLog(`findFileReportButton: fallback — scanning ${dialogs.length} dialog(s)`);
     for (const d of dialogs) {
       if (inPanel(d)) continue;
       const r = d.getBoundingClientRect();
@@ -387,31 +635,37 @@
         if (!txt) return false;
         return !BLOCK_EXCLUDE_PATTERNS.some((ex) => ex.test(txt));
       });
+      debugLog(`findFileReportButton: dialog ${r.width|0}x${r.height|0}, buttons=${btns.length}, eligible=${good.length}`);
+      for (const b of btns) debugLog(`  btn: ${describeButton(b)}`);
       if (good.length === 0) continue;
 
       if (good.length === 1) {
         const only = good[0];
         const headingEl = d.querySelector('h1, h2, h3, [role="heading"]');
         const heading = (headingEl && headingEl.textContent) || "";
-        if (/block|blockieren|bloquer|bloquear|blocca|blockera/i.test(heading)) {
+        if (/block|blockieren|bloquer|bloquear|blocca|blockera|engelle/i.test(heading)) {
           debugLog("file-report: single btn but heading is block-related — skipping");
           continue;
         }
-        debugLog(`file-report structural: single button "${(only.textContent || "").trim()}"`);
+        debugLog(`file-report structural: single button ${describeButton(only)}`);
         return only;
       }
 
-      const byAt = good.find((b) => /report|submit|file/i.test(b.getAttribute("data-a-target") || ""));
+      const byAt = good.find((b) => /report|submit|file|signal|denunc|inform|segnala|melden|bericht|жалоб|bildir|举报|通報|신고/i.test(b.getAttribute("data-a-target") || ""));
       if (byAt) {
-        debugLog(`file-report structural by data-a-target: "${(byAt.textContent || "").trim()}"`);
+        debugLog(`file-report structural by data-a-target: ${describeButton(byAt)}`);
         return byAt;
       }
 
       const byCls = good.find((b) => /primary/i.test(b.className || ""));
       if (byCls) {
-        debugLog(`file-report structural by primary class: "${(byCls.textContent || "").trim()}"`);
+        debugLog(`file-report structural by primary class: ${describeButton(byCls)}`);
         return byCls;
       }
+
+      const last = good[good.length - 1];
+      debugLog(`file-report structural: ${good.length} eligible, no data-a-target/primary — taking last ${describeButton(last)}`);
+      return last;
     }
 
     return null;
@@ -512,6 +766,26 @@
     return null;
   }
 
+  function dumpWizardRadios(name, scope) {
+    try {
+      const inputs = scope.querySelectorAll(`input[name="${name}"]`);
+      if (inputs.length === 0) {
+        debugLog(`[dump] radio "${name}": 0 inputs found in wizard`);
+        return;
+      }
+      const rows = [];
+      for (const inp of inputs) {
+        const lbl = inp.closest("label") ||
+          scope.querySelector(`label[for="${CSS.escape(inp.id || "")}"]`);
+        const txt = (lbl?.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60);
+        rows.push(`{id="${inp.id || ""}", value="${inp.value || ""}", label="${txt}"}`);
+      }
+      debugLog(`[dump] radio "${name}": ${inputs.length} inputs → ${rows.join(" | ")}`);
+    } catch (e) {
+      debugLog(`[dump] failed for radio "${name}": ${e.message}`);
+    }
+  }
+
   function clickRadioBySlug(name, slug, scope) {
     if (!slug) return false;
     const ids = [
@@ -549,7 +823,7 @@
 
   function clickRadioByLabelPrefix(name, prefix, scope) {
     const inputs = scope.querySelectorAll(`input[name="${name}"]`);
-    const lower = prefix.toLowerCase();
+    const lower = String(prefix).toLowerCase();
     for (const inp of inputs) {
       const lbl = inp.closest("label") ||
         scope.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
@@ -562,8 +836,9 @@
     }
     return false;
   }
+
   function clickRadioByLabelExact(name, text, scope) {
-    const lower = text.trim().toLowerCase();
+    const lower = String(text).trim().toLowerCase();
     for (const inp of scope.querySelectorAll(`input[name="${name}"]`)) {
       const lbl = inp.closest("label") ||
         scope.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
@@ -576,19 +851,44 @@
     return false;
   }
 
+  function clickRadioByAnyLabel(name, labels, scope) {
+    if (!labels || !labels.length) return false;
+    const sorted = labels.slice().sort((a, b) => b.length - a.length);
+    for (const label of sorted) {
+      if (clickRadioByLabelExact(name, label, scope)) {
+        debugLog(`radio ${name} clicked by exact label "${label}"`);
+        return true;
+      }
+    }
+    for (const label of sorted) {
+      if (clickRadioByLabelPrefix(name, label, scope)) {
+        debugLog(`radio ${name} clicked by prefix label "${label}"`);
+        return true;
+      }
+    }
+    return false;
+  }
+
   async function pickRadio(name, slug, labelText) {
     const wizard = getWizard();
     if (!wizard) throw new Error("wizard not mounted");
     const el = await waitForInterruptible(
       () => wizard.querySelector(`input[name="${name}"]`), 5000);
     if (!el) throw new Error(`radio ${name} never appeared`);
+
     if (slug && clickRadioBySlug(name, slug, wizard)) {
-      debugLog(`radio ${name} clicked by slug "${slug}"`); return;
+      debugLog(`radio ${name} clicked by slug "${slug}"`);
+      return;
     }
-    if (labelText && clickRadioByLabelPrefix(name, labelText, wizard)) {
-      debugLog(`radio ${name} clicked by label "${labelText}"`); return;
+    if (labelText) {
+      const labels = Array.isArray(labelText) ? labelText : [labelText];
+      if (clickRadioByAnyLabel(name, labels, wizard)) {
+        debugLog(`radio ${name} clicked by label "${labels[0]}"`);
+        return;
+      }
     }
-    throw new Error(`radio ${name} not matched (slug="${slug}", label="${labelText}")`);
+    dumpWizardRadios(name, wizard);
+    throw new Error(`radio ${name} not matched (slug="${slug}", labels="${Array.isArray(labelText) ? labelText.join("|") : labelText}")`);
   }
 
   async function clickNext() {
@@ -786,6 +1086,16 @@
     return String(subLabel).toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
   }
 
+  function getReasonLabels(reasonName) {
+    return REASON_LABELS_I18N[reasonName] || [reasonName];
+  }
+  function getSubLabels(subName) {
+    return SUB_LABELS_I18N[subName] || [subName];
+  }
+  function getContentLabels(contentName) {
+    return CONTENT_LABELS_I18N[contentName] || [contentName];
+  }
+
   const STEPS = [
     {
       name: "open-menu",
@@ -795,6 +1105,7 @@
         const btn = qs(SEL.moreOptions);
         if (!btn) throw new Error("more-options button not found");
         btn.click();
+        debugLog("more-options clicked");
       }
     },
     {
@@ -804,6 +1115,7 @@
       action: async () => {
         const btn = qs(SEL.reportChannel) || findClickable(REPORT_CHANNEL_PATTERNS, document, BLOCK_EXCLUDE_PATTERNS);
         if (!btn) throw new Error("report channel button not found");
+        debugLog(`report-channel btn: ${describeButton(btn)}`);
         btn.click();
       }
     },
@@ -814,6 +1126,7 @@
       action: async () => {
         const btn = findFileReportButton();
         if (!btn) throw new Error("file-a-report button not found");
+        debugLog(`file-report btn: ${describeButton(btn)}`);
         btn.click();
       }
     },
@@ -826,7 +1139,9 @@
       },
       action: async () => {
         const ct = CONTENT_TYPES.find((c) => c.label === state.settings.content) || CONTENT_TYPES[0];
-        await pickRadio("content-select-radio-group", ct.slug, ct.label);
+        const labels = getContentLabels(ct.label);
+        debugLog(`content-type: "${ct.label}" (slug="${ct.slug}", i18n labels=${labels.length})`);
+        await pickRadio("content-select-radio-group", ct.slug, labels);
         await clickNext();
       }
     },
@@ -844,18 +1159,27 @@
         const wizard = getWizard();
         if (!r || !wizard) throw new Error("reason state invalid");
 
+        const labels = getReasonLabels(parentName);
+        debugLog(`reason: "${parentName}" (slug="${r.slug}", i18n labels=${labels.length})`);
+
         if (r.slug && clickRadioBySlug("reason-select-radio-group", r.slug, wizard)) {
-          debugLog(`reason clicked directly: ${parentName}`);
+          debugLog(`reason clicked directly by slug: ${parentName}`);
           state.usedSearchReason = false;
           await clickNext(); return;
         }
-        if (clickRadioByLabelPrefix("reason-select-radio-group", parentName, wizard)) {
+        if (clickRadioByAnyLabel("reason-select-radio-group", labels, wizard)) {
           debugLog(`reason clicked by label: ${parentName}`);
           state.usedSearchReason = false;
           await clickNext(); return;
         }
+
+        dumpWizardRadios("reason-select-radio-group", wizard);
         debugLog(`reason "${parentName}" has no direct radio — using Search`);
-        if (!clickRadioBySlug("reason-select-radio-group", "searching-other", wizard)) {
+
+        if (!clickRadioBySlug("reason-select-radio-group", "searching-other", wizard) &&
+            !clickRadioByAnyLabel("reason-select-radio-group",
+              ["Search", "Rechercher", "Buscar", "Pesquisar", "Suchen", "Cerca", "Поиск", "Ara", "搜索", "検索", "검색"],
+              wizard)) {
           throw new Error(`Search radio not found (reason="${parentName}")`);
         }
         debugLog("Search radio clicked");
@@ -880,6 +1204,10 @@
         if (!target) throw new Error("no search target");
 
         const slug = subToSlug(target);
+        const labels = sub ? getSubLabels(sub) : getReasonLabels(state.settings.reason);
+
+        debugLog(`search-pick: target="${target}" slug="${slug}" i18n labels=${labels.length}`);
+
         const wantedRadio = () => {
           if (slug) {
             const candidates = [
@@ -901,25 +1229,27 @@
         const appears = await waitForInterruptible(wantedRadio, 4000, 120);
         if (appears) {
           if (clickRadioBySlug("reason-search-radio-group", slug, wizard)) {
-            debugLog(`search result clicked by slug "${slug}" (localized label ok)`);
+            debugLog(`search result clicked by slug "${slug}"`);
             await clickNext(); return;
           }
         }
 
-        if (clickRadioByLabelExact("reason-search-radio-group", target, wizard)) {
-          debugLog(`search result clicked: "${target}"`); await clickNext(); return;
-        }
-        if (clickRadioByLabelPrefix("reason-search-radio-group", target, wizard)) {
-          debugLog(`search result clicked by prefix: "${target}"`); await clickNext(); return;
+        if (clickRadioByAnyLabel("reason-search-radio-group", labels, wizard)) {
+          debugLog(`search result clicked by i18n label "${labels[0]}"`);
+          await clickNext(); return;
         }
 
         const all = wizard.querySelectorAll('input[name="reason-search-radio-group"]');
-        if (all.length === 0) throw new Error(`no search results rendered (target="${target}")`);
+        if (all.length === 0) {
+          debugLog(`search-pick: no search results rendered (target="${target}")`);
+          throw new Error(`no search results rendered (target="${target}")`);
+        }
+        dumpWizardRadios("reason-search-radio-group", wizard);
         const first = all[0];
         const lbl = first.closest("label") ||
           wizard.querySelector(`label[for="${CSS.escape(first.id)}"]`);
         const txt = ((lbl?.textContent || "") || first.id || "").trim();
-        throw new Error(`search result not matched (slug="${slug}", label="${target}"). first result was "${txt}" — check subreason/locale`);
+        throw new Error(`search result not matched (slug="${slug}", labels="${labels.join("|")}"). first result was "${txt}"`);
       }
     },
     {
@@ -938,7 +1268,9 @@
         if (!r || r.subs.length === 0) return;
         if (!state.settings.subreason) throw new Error("reason requires a detailed reason");
         const slug = subToSlug(state.settings.subreason);
-        await pickRadio("detailed-reason-select-radio", slug, state.settings.subreason);
+        const labels = getSubLabels(state.settings.subreason);
+        debugLog(`detailed-reason: "${state.settings.subreason}" (slug="${slug}", i18n labels=${labels.length})`);
+        await pickRadio("detailed-reason-select-radio", slug, labels);
         await clickNext();
       }
     },
@@ -990,7 +1322,18 @@
 
     const detected = await waitForInterruptible(() => step.detect(), ctx.timeoutMs, 150);
     if (!state.running) return;
-    if (detected === null) throw new StepTimeoutError(step, ctx.timeoutMs);
+    if (detected === null) {
+      debugLog(`  step "${step.name}" — detect() timed out after ${ctx.timeoutMs}ms`);
+      try {
+        const wizard = getWizard();
+        if (wizard) {
+          const title = wizard.querySelector("h1, h2, h3, [role='heading']");
+          debugLog(`  wizard title: "${(title?.textContent || "").trim().slice(0, 80)}"`);
+        }
+        debugLog(`  url: ${location.pathname}`);
+      } catch {}
+      throw new StepTimeoutError(step, ctx.timeoutMs);
+    }
     if (detected === "skipped") { debugLog(`  step "${step.name}" — skipped`); return; }
 
     const challenge2 = detectChallenge();
@@ -1043,6 +1386,8 @@
       timeoutMs: state.settings.timeoutMs,
       maxRetries: state.settings.maxRetries
     };
+
+    debugLog(`lang hint: html lang="${document.documentElement.getAttribute("lang") || "?"}" nav lang="${navigator.language || "?"}"`);
 
     while (state.running) {
       if (state.settings.cycleLimit > 0 &&
@@ -1114,6 +1459,16 @@
     if (variants.length === 0) {
       setStatus("load a .reports file before starting", "err");
       return;
+    }
+
+    if (!autoResumed) {
+      state.progress.cycleCount = 0;
+      state.progress.usedLines = [];
+      persistSoon();
+      updateProgressUI();
+      debugLog("start (manual) — cycles reset to 0, variants reset");
+    } else {
+      debugLog(`start (auto-resume) — continuing from cycle ${state.progress.cycleCount}`);
     }
 
     state.running = true;
@@ -1362,7 +1717,7 @@
     });
 
     runBtn.addEventListener("click", () => {
-      debugLog("run button clicked");
+      debugLog("run button clicked — cycles will reset");
       startRun(false);
     });
     stopBtn.addEventListener("click", () => stopRun("user"));
@@ -1378,22 +1733,42 @@
 
     dashBtn.addEventListener("click", () => {
       debugLog("open dashboard requested");
+      let urlHint = "?";
+      try { urlHint = chrome.runtime.getURL("options.html"); } catch { /* ignore */ }
+      debugLog("dashboard url: " + urlHint);
+
       try {
         chrome.runtime.sendMessage({ type: "OPEN_DASHBOARD" }, (resp) => {
           if (chrome.runtime.lastError) {
-            warn("open dashboard failed:", chrome.runtime.lastError.message);
-            debugLog("open dashboard failed: " + chrome.runtime.lastError.message);
+            const m = chrome.runtime.lastError.message || "send failed";
+            debugLog("open dashboard failed: " + m);
+            setStatus("dashboard error: " + m, "err");
             return;
           }
           if (resp && resp.ok) {
-            debugLog("dashboard opened" + (resp.fallback ? " (fallback)" : ""));
-          } else {
-            debugLog("dashboard open error: " + (resp && resp.error ? resp.error : "unknown"));
+            const where = resp.tabId
+              ? ("tab " + resp.tabId)
+              : (resp.windowId ? ("window " + resp.windowId) : "tab");
+            debugLog("dashboard opened in " + where);
+            setStatus("dashboard opened (" + where + ")", "ok");
+            return;
+          }
+          const errMsg = resp && resp.error ? resp.error : "unknown";
+          debugLog("dashboard open error: " + errMsg);
+          setStatus("dashboard error: " + errMsg, "err");
+
+          if (resp && resp.url) {
+            try {
+              window.open(resp.url, "_blank");
+              debugLog("fallback: window.open(" + resp.url + ")");
+            } catch (e2) {
+              debugLog("fallback window.open failed: " + e2.message);
+            }
           }
         });
       } catch (e) {
-        warn("sendMessage failed", e);
-        debugLog("sendMessage failed: " + e.message);
+        debugLog("sendMessage exception: " + e.message);
+        setStatus("dashboard error: " + e.message, "err");
       }
     });
 
@@ -1515,7 +1890,7 @@
   });
 
   async function init() {
-    debugLog("init (incognito=" + IS_INCOGNITO + ")");
+    debugLog("init (incognito=" + IS_INCOGNITO + ") lang=" + detectLanguageHint());
     await loadAll();
 
     const stale = document.getElementById(PANEL_ID);
