@@ -25,6 +25,7 @@ Everything runs in **incognito split mode**. The extension is completely inert i
 ## Features
 
 ### Automation
+
 - Step-driven wizard walker with per-step `detect()` / `action()` and interruptible sleeps.
 - Full i18n selector set: EN, DE, FR, ES, PT, IT, RU, PL, TR, ZH, JA, KO.
 - Retry chain per step (`maxRetries`) with timeout (`timeoutMs`) and failsafe reload.
@@ -34,6 +35,7 @@ Everything runs in **incognito split mode**. The extension is completely inert i
 - Cycle limit (0 = ∞), cycle counter, live progress line in the panel.
 
 ### Fingerprint rotation
+
 - 13-profile UA pool (Chrome/Firefox/Safari × Windows/macOS/Linux, current versions).
 - 5-entry `Accept-Language` rotation pool (en-US, en-GB, de-DE, fr-FR, es-ES).
 - Session-scoped `declarativeNetRequest` rule rewriting outbound headers for Twitch and all CDN/asset domains.
@@ -44,12 +46,14 @@ Everything runs in **incognito split mode**. The extension is completely inert i
 - Auto-rotate on navigation: 15% chance, minimum 30 min interval.
 
 ### Observability
+
 - In-page panel (draggable, resizable, collapse-to-header).
 - Full dashboard (`options.html`) with live fingerprint status, progress, settings, debug log, emails-used table.
 - Debug log ring buffer (800 lines), email audit log (2000 rows).
 - One-click export of debug and email logs (`.log` / `.tsv`).
 
 ### Rate limiting
+
 - Token bucket: **3 tokens per hour**, refill **1 per 20 min**.
 - Every report submission acquires a token before running.
 - `ACQUIRE_TOKEN` message returns `{ ok, waitMs }` when throttled.
@@ -59,12 +63,14 @@ Everything runs in **incognito split mode**. The extension is completely inert i
 ## Install
 
 ### From source
+
 1. Clone the repo.
 2. `chrome://extensions` → **Developer mode** → **Load unpacked** → select the folder.
 3. Right-click the extension → **Manage extensions** → enable **Allow in incognito**.
 4. Open any incognito window → navigate to a Twitch channel → the panel appears automatically.
 
 ### From release
+
 Download the `.crx` or the zipped build, unpack, load unpacked. Same incognito toggle as above.
 
 > **Important:** the extension **will not activate** in normal windows. This is by design — `chrome.extension.inIncognitoContext` gates every entry point.
@@ -98,31 +104,37 @@ Variants are picked without repetition until the pool is exhausted, then the cyc
 ---
 
 ## Architecture
-manifest.json — MV3 manifest, incognito: split
-background.js — service worker: profile rotation, DNR rules, rate limit
-content.js — panel UI + wizard automation (document_idle, main frame)
-content/isolated.js — bridge: chrome.storage.session → localStorage → postMessage
-content/injected.js — MAIN world: navigator / canvas / WebGL / WebRTC overrides
-options.html/.css/.js — dashboard
-panel.css — in-page panel styles
+
+```text
+manifest.json          — MV3 manifest, incognito: split
+background.js          — service worker: profile rotation, DNR rules, rate limit
+content.js             — panel UI + wizard automation (document_idle, main frame)
+content/isolated.js    — bridge: chrome.storage.session → localStorage → postMessage
+content/injected.js    — MAIN world: navigator / canvas / WebGL / WebRTC overrides
+options.html/.css/.js  — dashboard
+panel.css              — in-page panel styles
+```
 
 ### Message flow
+
+```text
 background ──(applyProfile)──▶ chrome.storage.session[PROFILE_KEY]
-│
-▼
+   │
+   ▼
 content/isolated.js (ISOLATED world)
-│
-localStorage.__tsr_profile_v1
-│
-window.postMessage({ __tsr, CONFIG })
-│
-▼
+   │
+   localStorage.__tsr_profile_v1
+   │
+   window.postMessage({ __tsr, CONFIG })
+   │
+   ▼
 content/injected.js (MAIN world)
-│
-CFG.profile applied to Navigator / Canvas / WebGL
-│
-▼
+   │
+   CFG.profile applied to Navigator / Canvas / WebGL
+   │
+   ▼
 content.js reads profile via GET_PROFILE (optional)
+```
 
 ### Wizard step chain (`content.js` → `STEPS`)
 
@@ -260,79 +272,89 @@ const Patched = function (config, ...rest) {
 };
 Patched.prototype = RTC.prototype;
 Object.setPrototypeOf(Patched, RTC);
-iceTransportPolicy: "relay" filters out host candidates — no local RFC1918 IPs leak via SDP. The constructor name is preserved (Object.defineProperty(Patched, "name", { value: "RTCPeerConnection" })), and the prototype chain is restored so instanceof RTCPeerConnection still works for detection code that inspects it.
+```
+
+`iceTransportPolicy: "relay"` filters out host candidates — no local RFC1918 IPs leak via SDP. The constructor name is preserved (`Object.defineProperty(Patched, "name", { value: "RTCPeerConnection" })`), and the prototype chain is restored so `instanceof RTCPeerConnection` still works for detection code that inspects it.
 
 ### Auto-rotation
-chrome.tabs.onUpdated watches every incognito tab completion. If the URL matches https?://([^/]+\.)?twitch\.tv/, and:
 
-≥ 30 min since last rotation (ROT_MIN_MS)
+`chrome.tabs.onUpdated` watches every incognito tab completion. If the URL matches `https?://([^/]+\.)?twitch\.tv/`, and:
 
-Math.random() < 0.15 (ROT_PROB)
+- ≥ 30 min since last rotation (`ROT_MIN_MS`)
+- `Math.random() < 0.15` (`ROT_PROB`)
 
-…then pickProfile() → applyProfile() → persist ROT_KEY. This gives organic-feeling rotation (occasional, not rhythmic) while keeping the profile sticky across a browsing session.
+…then `pickProfile()` → `applyProfile()` → persist `ROT_KEY`. This gives organic-feeling rotation (occasional, not rhythmic) while keeping the profile sticky across a browsing session.
 
 ### Rate limiting
-acquireReportToken() implements a classic token bucket:
 
-Capacity: 3
+`acquireReportToken()` implements a classic token bucket:
 
-Window: 1 hour
+- **Capacity:** 3
+- **Window:** 1 hour
+- **Refill:** 1 token per `REFILL_MS = 20 * 60 * 1000`
 
-Refill: 1 token per REFILL_MS = 20 * 60 * 1000
+Bucket state persists in `chrome.storage.local[tsr_rate_v2]`. Elapsed intervals are added on read (`Math.floor(elapsed / REFILL_MS)`); `last` is advanced by `intervals * REFILL_MS` so drift does not accumulate. Returning `{ ok: false, waitMs }` lets the caller back off without spinning.
 
-Bucket state persists in chrome.storage.local[tsr_rate_v2]. Elapsed intervals are added on read (Math.floor(elapsed / REFILL_MS)); last is advanced by intervals * REFILL_MS so drift does not accumulate. Returning { ok: false, waitMs } lets the caller back off without spinning.
+---
 
-### Settings reference
-Key	Default	Notes
-content	Chat Messages	Content-type radio on wizard step 1
-reason	Hateful Conduct	Parent reason radio on step 2
-subreason	Slurs or Symbols	Detailed reason (or search-pick)
-descriptionText	""	Raw .reports content
-delayMin / delayMax	800 / 1800	Per-step jitter, ms
-timeoutMs	8000	Per-step detect() timeout
-maxRetries	3	Retries per step before failsafe
-cycleLimit	10	0 = ∞
-reloadOnFail	true	Failsafe reload on total step failure
-debug	true	Verbose logging + ring buffer
-DEFAULT_PROGRESS — { usedLines: [], cycleCount: 0, lastUA: null }.
+## Settings reference
 
-### Storage keys
-All under chrome.storage.local unless noted.
+| Key | Default | Notes |
+|-----|---------|-------|
+| `content` | `Chat Messages` | Content-type radio on wizard step 1 |
+| `reason` | `Hateful Conduct` | Parent reason radio on step 2 |
+| `subreason` | `Slurs or Symbols` | Detailed reason (or search-pick) |
+| `descriptionText` | `""` | Raw `.reports` content |
+| `delayMin` / `delayMax` | `800` / `1800` | Per-step jitter, ms |
+| `timeoutMs` | `8000` | Per-step `detect()` timeout |
+| `maxRetries` | `3` | Retries per step before failsafe |
+| `cycleLimit` | `10` | `0` = ∞ |
+| `reloadOnFail` | `true` | Failsafe reload on total step failure |
+| `debug` | `true` | Verbose logging + ring buffer |
 
-Key	Purpose
-tsr_settings_v1	Settings (synced with dashboard)
-tsr_progress_v1	Cycle counter, used .reports lines, last UA
-tsr_debug_v1	Debug ring buffer (800 lines)
-tsr_emails_v1	Email audit log (2000 rows)
-tsr_resume_v1	Auto-resume flag (post-reload)
-tsr_target_channel_v1	Last target channel
-tsr_rate_v2	Token bucket state
-tsr_last_rotate_v1	Timestamp of last auto-rotation
-tsr_panel_pos_v1	Panel geometry
-tsr_profile_v1 (session)	Active fingerprint profile
+`DEFAULT_PROGRESS` — `{ usedLines: [], cycleCount: 0, lastUA: null }`.
+
+## Storage keys
+
+All under `chrome.storage.local` unless noted.
+
+| Key | Purpose |
+|-----|---------|
+| `tsr_settings_v1` | Settings (synced with dashboard) |
+| `tsr_progress_v1` | Cycle counter, used `.reports` lines, last UA |
+| `tsr_debug_v1` | Debug ring buffer (800 lines) |
+| `tsr_emails_v1` | Email audit log (2000 rows) |
+| `tsr_resume_v1` | Auto-resume flag (post-reload) |
+| `tsr_target_channel_v1` | Last target channel |
+| `tsr_rate_v2` | Token bucket state |
+| `tsr_last_rotate_v1` | Timestamp of last auto-rotation |
+| `tsr_panel_pos_v1` | Panel geometry |
+| `tsr_profile_v1` *(session)* | Active fingerprint profile |
+
 LocalStorage keys (per origin, in-page):
 
-Key	Purpose
-__tsr_profile_v1	Cached profile for injected.js
-__tsr_salt_v1	Session canvas-noise salt
+| Key | Purpose |
+|-----|---------|
+| `__tsr_profile_v1` | Cached profile for `injected.js` |
+| `__tsr_salt_v1` | Session canvas-noise salt |
 
-### Dashboard
-options.html — reachable from the panel's open dashboard button. Provides:
+## Dashboard
 
-Fingerprint card — active browser / platform / version / rate tokens, plus rotate UA and clear rules buttons.
+`options.html` — reachable from the panel's open dashboard button. Provides:
 
-Progress card — cycle, limit, variants used, target channel, last UA.
+- **Fingerprint card** — active browser / platform / version / rate tokens, plus rotate UA and clear rules buttons.
+- **Progress card** — cycle, limit, variants used, target channel, last UA.
+- **Settings** — same fields as the panel; changes sync bidirectionally via `chrome.storage.onChanged`.
+- **Debug log** — live, autoscroll, export, copy, clear.
+- **Emails used** — table of `ts / email / channel / reason / subreason / user-agent`, with `.tsv` export.
 
-Settings — same fields as the panel; changes sync bidirectionally via chrome.storage.onChanged.
+If the dashboard is opened outside the extension context (e.g. from disk), `HAS_EXT` check fires and the whole UI is disabled with an explicit "wrong context" banner. This is deliberate — `chrome.storage` is not exposed to `file://` pages.
 
-Debug log — live, autoscroll, export, copy, clear.
+---
 
-Emails used — table of ts / email / channel / reason / subreason / user-agent, with .tsv export.
+## File structure
 
-If the dashboard is opened outside the extension context (e.g. from disk), HAS_EXT check fires and the whole UI is disabled with an explicit "wrong context" banner. This is deliberate — chrome.storage is not exposed to file:// pages.
-
-File structure
-text
+```text
 .
 ├── manifest.json
 ├── background.js
@@ -344,7 +366,10 @@ text
 ├── options.html
 ├── options.css
 └── options.js
-Single-package, no build step. chrome://extensions → Load unpacked → done.
+```
 
-License
+Single-package, no build step. `chrome://extensions` → **Load unpacked** → done.
+
+## License
+
 MIT.
