@@ -1,165 +1,350 @@
-# TS Reporter
+# 🪱 TS Reporter
 
-**A Chrome extension for automating Twitch reports in incognito mode.**
+**Incognito-only Twitch report automation with fingerprint anti-detect.**
 
-> **⚠️ Disclaimer:** This extension is not affiliated with Twitch. Automating reports may violate Twitch's Terms of Service. Use at your own risk.
+![version](https://img.shields.io/badge/version-2.0.1-a970ff)
+![manifest](https://img.shields.io/badge/manifest-v3-9147ff)
+![chrome](https://img.shields.io/badge/chrome-%E2%89%A5120-00c176)
+![incognito](https://img.shields.io/badge/incognito-split-2f2f35)
+
+---
+
+## What it is
+
+TS Reporter is a Chrome MV3 extension that automates the Twitch report wizard inside **incognito windows**. It walks the report flow end-to-end (menu → report → wizard → confirmation), applies per-cycle fingerprint rotation, and logs every submission so you can audit what was sent.
+
+Two layers, one binary:
+
+1. **Automation layer** — DOM-driven wizard walker with retries, timeouts, localized selectors, and reload-on-failure failsafe.
+2. **Anti-detect layer** — per-cycle UA rotation, HTTP header rewriting via `declarativeNetRequest`, MAIN-world `navigator`/`userAgentData` overrides, canvas noise, WebGL spoofing, and WebRTC relay-only enforcement.
+
+Everything runs in **incognito split mode**. The extension is completely inert in normal windows — this is enforced at the top of `content.js`, `isolated.js`, and `background.js` via `chrome.extension.inIncognitoContext`.
 
 ---
 
 ## Features
 
-- **Incognito-only** – runs exclusively in incognito windows (`incognito: "split"` in manifest).
-- **Injected panel** – a draggable, resizable control panel appears on Twitch channel pages.
-- **Automated report wizard** – fills out the report form step‑by‑step:
-  - selects content type
-  - selects reason (and detailed reason)
-  - fills description from a `.reports` file
-  - checks verification checkbox
-  - fills a randomly generated email
-  - submits the report
-- **Custom report descriptions** – load a `.reports` file with multiple variants.
-- **Cycle control** – run a fixed number of cycles or infinitely (0 = ∞).
-- **User‑Agent rotation** – rotates the User‑Agent for Twitch requests via `declarativeNetRequest`.
-- **Retries & timeouts** – per‑step timeout, automatic retries, and page reload on failure.
-- **Debug logging** – live debug log stored in `chrome.storage.local`.
-- **Dashboard** – full‑page options UI to view progress, debug log, emails used, and adjust settings.
-- **Persistent storage** – settings, progress, logs, and email history are saved locally.
+### Automation
+- Step-driven wizard walker with per-step `detect()` / `action()` and interruptible sleeps.
+- Full i18n selector set: EN, DE, FR, ES, PT, IT, RU, PL, TR, ZH, JA, KO.
+- Retry chain per step (`maxRetries`) with timeout (`timeoutMs`) and failsafe reload.
+- Auto-resume after reload — the extension remembers target channel, cycle, and progress via `chrome.storage`.
+- `.reports` file support with `$`-prefixed multi-variant descriptions, picked without repetition until the pool empties.
+- Random email generation per submission (prefix + suffix + domain pool), logged for audit.
+- Cycle limit (0 = ∞), cycle counter, live progress line in the panel.
+
+### Fingerprint rotation
+- 13-profile UA pool (Chrome/Firefox/Safari × Windows/macOS/Linux, current versions).
+- 5-entry `Accept-Language` rotation pool (en-US, en-GB, de-DE, fr-FR, es-ES).
+- Session-scoped `declarativeNetRequest` rule rewriting outbound headers for Twitch and all CDN/asset domains.
+- MAIN-world `navigator` surface overrides — full `userAgentData` reconstruction with `getHighEntropyValues()`.
+- Deterministic-per-session canvas noise via `toDataURL` / `toBlob` overrides.
+- WebGL `VENDOR` / `RENDERER` spoofing matched to spoofed platform.
+- WebRTC `RTCPeerConnection` wrapper forcing `iceTransportPolicy = "relay"`.
+- Auto-rotate on navigation: 15% chance, minimum 30 min interval.
+
+### Observability
+- In-page panel (draggable, resizable, collapse-to-header).
+- Full dashboard (`options.html`) with live fingerprint status, progress, settings, debug log, emails-used table.
+- Debug log ring buffer (800 lines), email audit log (2000 rows).
+- One-click export of debug and email logs (`.log` / `.tsv`).
+
+### Rate limiting
+- Token bucket: **3 tokens per hour**, refill **1 per 20 min**.
+- Every report submission acquires a token before running.
+- `ACQUIRE_TOKEN` message returns `{ ok, waitMs }` when throttled.
 
 ---
 
-## Installation
+## Install
 
-1. **Download or clone** this repository.
-2. Open Chrome and go to `chrome://extensions`.
-3. Enable **Developer mode** (toggle in the top‑right corner).
-4. Click **Load unpacked** and select the folder containing `manifest.json`.
-5. The extension is now installed. Remember: it only works in **incognito windows**.
+### From source
+1. Clone the repo.
+2. `chrome://extensions` → **Developer mode** → **Load unpacked** → select the folder.
+3. Right-click the extension → **Manage extensions** → enable **Allow in incognito**.
+4. Open any incognito window → navigate to a Twitch channel → the panel appears automatically.
 
----
+### From release
+Download the `.crx` or the zipped build, unpack, load unpacked. Same incognito toggle as above.
 
-## Usage
-
-1. Open an **incognito window** (Ctrl+Shift+N / ⌘+Shift+N).
-2. Navigate to any Twitch channel (e.g., `https://www.twitch.tv/somechannel`).
-3. A panel titled **TS Reporter** will appear. If it doesn't, try refreshing the page.
-4. Configure the settings in the panel (see below).
-5. Load a `.reports` file containing your report descriptions.
-6. Click **Run**. The extension will start automating the report process.
-7. Use **Stop** to halt, or **Reset cycles** to reset the cycle counter.
-8. Click **Open Dashboard** to view detailed progress, debug logs, and the list of emails used.
-
-> **Note:** The panel only appears in incognito windows. In normal windows the content script does nothing.
+> **Important:** the extension **will not activate** in normal windows. This is by design — `chrome.extension.inIncognitoContext` gates every entry point.
 
 ---
 
-## Configuration
+## Quick start
 
-### Panel & Dashboard settings
+1. Open an incognito window.
+2. Navigate to the Twitch channel you want to report: `https://www.twitch.tv/<channel>`.
+3. Panel appears top-left. Fill in:
+   - **content type** — what you're reporting (chat, whispers, username, user, off-twitch).
+   - **reason (parent)** — parent reason category.
+   - **detailed reason** — sub-reason (auto-populated).
+   - **cycles** — how many reports to fire (1–999, 0 = ∞).
+4. Load a `.reports` file with your description variants.
+5. Click **run**.
 
-| Setting | Description |
-|--------|-------------|
-| **Content type** | Chat Messages, Whispers, Username, User (Avatar, etc.), Off Twitch Behavior |
-| **Reason (parent)** | Main report reason (e.g., Hateful Conduct, Spam, etc.) |
-| **Detailed reason** | Sub‑reason (if applicable) |
-| **Delay min / max (ms)** | Random delay range between steps |
-| **Timeout (ms)** | Maximum time to wait for each wizard step |
-| **Retries** | Number of retries per step before failing |
-| **Cycles** | Number of report cycles (1–999, 0 = infinite) |
-| **Debug logging** | Enable/disable debug log output |
+The extension walks the wizard, rotates UA each cycle, submits, confirms, closes, and repeats.
 
-### `.reports` file format
-
-The `.reports` file is a plain text file where each **variant** is separated by a line starting with `$`. A variant can span multiple lines.
-
-Example:
-
-The extension picks variants in random order, tracking which ones have been used. When all variants are used, the cycle resets and they become available again.
+If any step fails three times, the page reloads, the target is remembered, and the wizard resumes from the top.
 
 ---
 
-## Dashboard
+## `.reports` file format
 
-The dashboard (options page) provides a full overview:
+Multi-variant description file. Each variant begins with `$` on its own line; everything until the next `$` belongs to that variant.
 
-- **Progress** – current cycle, cycle limit, variants used, target channel, last User‑Agent.
-- **Settings** – same as the panel; changes are saved automatically and synced with the panel.
-- **Debug log** – view, copy, or clear the debug log (up to 500 lines).
-- **Emails used** – table of generated emails with channel, reason, detailed reason, User‑Agent, and timestamp. Copy all or clear.
-
-You can open the dashboard from:
-
-- the panel's **Open Dashboard** button
-- `chrome://extensions` → TS Reporter → **Extension options**
-- right‑click the extension icon → **Options**
-
-> If you open `options.html` directly from disk, it will warn that it's outside the extension context and cannot access `chrome.storage`.
+Variants are picked without repetition until the pool is exhausted, then the cycle resets. This avoids identical descriptions within a reporting streak while keeping the rotation deterministic enough to audit.
 
 ---
 
-## How It Works
+## Architecture
+manifest.json — MV3 manifest, incognito: split
+background.js — service worker: profile rotation, DNR rules, rate limit
+content.js — panel UI + wizard automation (document_idle, main frame)
+content/isolated.js — bridge: chrome.storage.session → localStorage → postMessage
+content/injected.js — MAIN world: navigator / canvas / WebGL / WebRTC overrides
+options.html/.css/.js — dashboard
+panel.css — in-page panel styles
 
-- **`content.js`** runs on `https://www.twitch.tv/*` but exits immediately if not in incognito.  
-  It injects the panel and, when **Run** is clicked, executes a state machine (`STEPS`) that:
-  1. Opens the channel menu.
-  2. Clicks "Report Channel".
-  3. Clicks "File a Report".
-  4. Navigates the wizard: content type → reason → (search results) → detailed reason → description → verify + email → submit → close confirmation.
+### Message flow
+background ──(applyProfile)──▶ chrome.storage.session[PROFILE_KEY]
+│
+▼
+content/isolated.js (ISOLATED world)
+│
+localStorage.__tsr_profile_v1
+│
+window.postMessage({ __tsr, CONFIG })
+│
+▼
+content/injected.js (MAIN world)
+│
+CFG.profile applied to Navigator / Canvas / WebGL
+│
+▼
+content.js reads profile via GET_PROFILE (optional)
 
-  Each step waits for a specific element, applies a random delay, and performs the action. On timeout it retries; after all retries it can reload the page and resume automatically.
+### Wizard step chain (`content.js` → `STEPS`)
 
-- **`background.js`** handles:
-  - User‑Agent rotation (`ROTATE_UA`) using `declarativeNetRequest`.
-  - Opening the dashboard (`OPEN_DASHBOARD`).
-  - Notifications.
+1. `open-menu` — click `more-options`
+2. `click-report` — click `Report Channel` item
+3. `click-file-report` — dismiss prompt, enter wizard
+4. `wizard-content` — content-type radio
+5. `wizard-reason` — parent reason (or `Search` if not directly present)
+6. `wizard-search-pick` — pick sub-reason from search results (if search was used)
+7. `wizard-detail` — detailed-reason radio (if no search)
+8. `wizard-description` — fill from `.reports` variant
+9. `wizard-confirm` — check verification, fill email, submit
+10. `wizard-done` — close confirmation screen
 
-- **`options.js`** powers the dashboard UI and syncs with `chrome.storage.local`.
-
-All data is stored locally under these keys:  
-`tsr_settings_v1`, `tsr_progress_v1`, `tsr_debug_v1`, `tsr_emails_v1`, `tsr_target_channel_v1`, `tsr_panel_pos_v1`, `tsr_resume_v1`.
-
-**No data is sent to external servers.**
-
----
-
-## Anti‑Abuse Bypasses
-
-To reduce the likelihood of detection while automating reports, the extension implements several countermeasures:
-
-- **Incognito‑only execution** – the content script bails out in normal windows, so the automation never touches a logged‑in session. Every report is filed from a clean, isolated context.
-- **User‑Agent rotation** – `background.js` rotates the `User-Agent` header for Twitch requests using `declarativeNetRequest`. This prevents simple UA‑based fingerprinting across report submissions.
-- **Randomized delays** – each step in the report wizard is preceded by a random delay within the configured `delay min` / `delay max` range. This breaks the predictable timing pattern that automated tools usually exhibit.
-- **Retry with page reload** – on timeout or failure the extension retries the step; after exhausting retries it reloads the page and resumes from the correct state. This handles transient network issues and soft blocks without manual intervention.
-- **Random email generation** – every report uses a freshly generated email address, so the same identity is never reused across submissions. The extension never uses your real email.
-- **Cycle control** – you can limit the number of reports per session or run infinitely. Limiting cycles helps avoid sudden spikes in activity from a single client.
-- **Local‑only storage** – all settings, logs, and email history stay in `chrome.storage.local`. No external servers are contacted, eliminating a common vector for correlation and tracking.
-
-> **Note:** These bypasses are designed to make automated reporting less conspicuous, but no method is foolproof. Twitch may update its detection mechanisms at any time.
-
----
-
-## File Structure
-├── manifest.json # Extension manifest (MV3)
-├── background.js # Service worker (UA rotation, dashboard opener, notifications)
-├── content.js # Content script (panel UI + report automation)
-├── panel.css # Styles for the injected panel
-├── options.html # Dashboard page
-├── options.js # Dashboard logic
-├── options.css # Dashboard styles
-├── reasons.json # Reference list of Twitch report reasons (not used directly)
-└── README.md
+Each step has a `detect()` (polled every 150 ms up to `timeoutMs`) and an `action()`. `runStepWithRetries` retries `StepTimeoutError` up to `maxRetries`, then triggers failsafe reload.
 
 ---
 
-## Important Notes
+## Anti-detect layer
 
-- **Incognito only** – the extension is designed to work exclusively in incognito windows. It will not run in normal windows.
-- **ToS warning** – automating reports may violate Twitch's Terms of Service. You are responsible for how you use this tool.
-- **Random emails** – the extension generates random email addresses for the report form; it never uses your real email.
-- **Local storage** – all settings, logs, and email history are stored in `chrome.storage.local` and never leave your browser.
-- **No warranty** – this software is provided as‑is, without any guarantees.
+> This section is intentionally technical. If you don't care how it works, skip to **Settings**.
 
----
+### Profile pool (13 entries)
 
-## License
+| Browser | Platform | Versions |
+|---------|----------|----------|
+| Chrome  | Windows  | 154, 153, 152 |
+| Chrome  | macOS    | 154, 153 |
+| Chrome  | Linux    | 154, 153 |
+| Firefox | Windows  | 156, 155 |
+| Firefox | macOS    | 156 |
+| Firefox | Linux    | 156 |
+| Safari  | macOS    | 27, 26 |
 
-See the [LICENSE](LICENSE) file for details.
+`pickProfile()` never returns the previous UA — it filters the current `lastUa` out of the pool before sampling. The chosen profile is persisted in `chrome.storage.session` under `tsr_profile_v1`, so a background-worker restart does not lose the active fingerprint.
+
+Each profile is **enriched** before application (`enrichProfile`): language tag picked from `LANG_POOL`, `uaBrands` and `fullVersionList` synthesized for Chrome, `oscpu` for Firefox, `platformVersion` per OS. This is what gets fed to `navigator.userAgentData.getHighEntropyValues()`.
+
+### HTTP header rewriting
+
+Single session-scoped `declarativeNetRequest` rule, id `9001`, priority `1`, scoped to:
+
+- `twitch.tv`
+- `jtvnw.net`
+- `ttvnw.net`
+- `twitchcdn.net`
+- `live-video.net`
+
+Headers rewritten per request:
+
+| Header | Chrome | Firefox | Safari |
+|--------|--------|---------|--------|
+| `user-agent` | set | set | set |
+| `accept-language` | set | set | set |
+| `sec-ch-ua` | set | **remove** | **remove** |
+| `sec-ch-ua-mobile` | set | **remove** | **remove** |
+| `sec-ch-ua-platform` | set | **remove** | **remove** |
+| `sec-ch-ua-full-version-list` | set | **remove** | **remove** |
+| `sec-fetch-site` | keep | keep | **remove** |
+| `sec-fetch-mode` | keep | keep | **remove** |
+| `sec-fetch-user` | keep | keep | **remove** |
+| `sec-fetch-dest` | keep | keep | **remove** |
+
+Chrome-mimic and Firefox-mimic send *different client hint sets*. Safari removes the `Sec-Fetch-*` family entirely (Safari 26/27 does send some, but the profile pool above does not — removal keeps the outbound header set internally consistent). Legacy rule IDs `9002..9005` from earlier versions are cleared on bootstrap via `migrateLegacyDynamicRules()`.
+
+### `navigator` surface (`content/injected.js`)
+
+All getters are wrapped via `Object.defineProperty` on `Navigator.prototype`, preserving the original accessor chain when `CFG.profile` is `null`:
+
+- `userAgent`
+- `appVersion`
+- `platform`
+- `vendor`
+- `language`
+- `languages` (returned frozen — the real `navigator.languages` is frozen, so mimicking)
+- `userAgentData` (Chrome profiles only; returns `undefined` for Firefox/Safari — matching real browsers)
+
+`FakeNavigatorUAData` reconstructs the whole `NavigatorUAData` interface:
+
+- `brands`, `mobile`, `platform` as own frozen properties
+- `getHighEntropyValues(hints)` returns `architecture`, `bitness`, `formFactors`, `model`, `platformVersion`, `uaFullVersion`, `wow64`, `fullVersionList` — all gated by the caller's `hints` set
+- `toJSON()` for serialization
+- `Symbol.toStringTag = "NavigatorUAData"` so feature-detection code sees the right class name
+
+Cache (`uaDataCache`, `WeakMap`) keyed by profile object — a single `getHighEntropyValues` call chain cannot observe two different profile states mid-session.
+
+### Canvas fingerprint noise
+
+Two overrides:
+
+- `HTMLCanvasElement.prototype.toDataURL`
+- `HTMLCanvasElement.prototype.toBlob`
+
+Both route through `serializeNoisy()`, which:
+
+1. Extracts pixel data via `getImageData(0, 0, w, h)`
+2. Applies `addDetNoise()` — LSB flip on a deterministic schedule
+3. Draws the result to an off-screen canvas
+4. Runs the original serializer against the off-screen canvas
+
+Noise seed: `hash32(width + "x" + height)` XORed with `sessionSalt`. `sessionSalt` is stored in `localStorage.__tsr_salt_v1` — a new random salt is generated only when the key is missing. Result:
+
+- **Stable within a session** — same canvas produces the same hash every time.
+- **Different across sessions** — cross-session correlation fails.
+- **Different across canvas dimensions** — no universal hash to query.
+
+Cross-origin tainted canvases (`getImageData` throws) fall back gracefully to the original serializer — no exception leaks into page code.
+
+### WebGL
+
+`getParameter` overridden on `WebGLRenderingContext.prototype` and `WebGL2RenderingContext.prototype`. Only two parameter constants are intercepted:
+
+| Constant | Value | Spoof per platform |
+|----------|-------|--------------------|
+| `UNMASKED_VENDOR_WEBGL` | `0x9245` | Chrome only |
+| `UNMASKED_RENDERER_WEBGL` | `0x9246` | Chrome only |
+
+Mapping:
+
+- **Windows** → `Google Inc. (NVIDIA)` / `ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)`
+- **macOS** → `Google Inc. (Apple)` / `ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)`
+- **Linux** → `Google Inc. (Intel)` / `ANGLE (Intel, Mesa Intel(R) UHD Graphics 620, OpenGL 4.6)`
+
+Firefox/Safari profiles return the native value — those browsers do not expose the `UNMASKED_*` extension in the way Chrome does, and spoofing them would be a tell.
+
+### WebRTC
+
+`RTCPeerConnection` is wrapped:
+
+```js
+const Patched = function (config, ...rest) {
+  const cfg = config ? { ...config } : {};
+  cfg.iceTransportPolicy = "relay";
+  return new RTC(cfg, ...rest);
+};
+Patched.prototype = RTC.prototype;
+Object.setPrototypeOf(Patched, RTC);
+iceTransportPolicy: "relay" filters out host candidates — no local RFC1918 IPs leak via SDP. The constructor name is preserved (Object.defineProperty(Patched, "name", { value: "RTCPeerConnection" })), and the prototype chain is restored so instanceof RTCPeerConnection still works for detection code that inspects it.
+
+### Auto-rotation
+chrome.tabs.onUpdated watches every incognito tab completion. If the URL matches https?://([^/]+\.)?twitch\.tv/, and:
+
+≥ 30 min since last rotation (ROT_MIN_MS)
+
+Math.random() < 0.15 (ROT_PROB)
+
+…then pickProfile() → applyProfile() → persist ROT_KEY. This gives organic-feeling rotation (occasional, not rhythmic) while keeping the profile sticky across a browsing session.
+
+### Rate limiting
+acquireReportToken() implements a classic token bucket:
+
+Capacity: 3
+
+Window: 1 hour
+
+Refill: 1 token per REFILL_MS = 20 * 60 * 1000
+
+Bucket state persists in chrome.storage.local[tsr_rate_v2]. Elapsed intervals are added on read (Math.floor(elapsed / REFILL_MS)); last is advanced by intervals * REFILL_MS so drift does not accumulate. Returning { ok: false, waitMs } lets the caller back off without spinning.
+
+### Settings reference
+Key	Default	Notes
+content	Chat Messages	Content-type radio on wizard step 1
+reason	Hateful Conduct	Parent reason radio on step 2
+subreason	Slurs or Symbols	Detailed reason (or search-pick)
+descriptionText	""	Raw .reports content
+delayMin / delayMax	800 / 1800	Per-step jitter, ms
+timeoutMs	8000	Per-step detect() timeout
+maxRetries	3	Retries per step before failsafe
+cycleLimit	10	0 = ∞
+reloadOnFail	true	Failsafe reload on total step failure
+debug	true	Verbose logging + ring buffer
+DEFAULT_PROGRESS — { usedLines: [], cycleCount: 0, lastUA: null }.
+
+### Storage keys
+All under chrome.storage.local unless noted.
+
+Key	Purpose
+tsr_settings_v1	Settings (synced with dashboard)
+tsr_progress_v1	Cycle counter, used .reports lines, last UA
+tsr_debug_v1	Debug ring buffer (800 lines)
+tsr_emails_v1	Email audit log (2000 rows)
+tsr_resume_v1	Auto-resume flag (post-reload)
+tsr_target_channel_v1	Last target channel
+tsr_rate_v2	Token bucket state
+tsr_last_rotate_v1	Timestamp of last auto-rotation
+tsr_panel_pos_v1	Panel geometry
+tsr_profile_v1 (session)	Active fingerprint profile
+LocalStorage keys (per origin, in-page):
+
+Key	Purpose
+__tsr_profile_v1	Cached profile for injected.js
+__tsr_salt_v1	Session canvas-noise salt
+
+### Dashboard
+options.html — reachable from the panel's open dashboard button. Provides:
+
+Fingerprint card — active browser / platform / version / rate tokens, plus rotate UA and clear rules buttons.
+
+Progress card — cycle, limit, variants used, target channel, last UA.
+
+Settings — same fields as the panel; changes sync bidirectionally via chrome.storage.onChanged.
+
+Debug log — live, autoscroll, export, copy, clear.
+
+Emails used — table of ts / email / channel / reason / subreason / user-agent, with .tsv export.
+
+If the dashboard is opened outside the extension context (e.g. from disk), HAS_EXT check fires and the whole UI is disabled with an explicit "wrong context" banner. This is deliberate — chrome.storage is not exposed to file:// pages.
+
+File structure
+text
+.
+├── manifest.json
+├── background.js
+├── content.js
+├── content/
+│   ├── isolated.js
+│   └── injected.js
+├── panel.css
+├── options.html
+├── options.css
+└── options.js
+Single-package, no build step. chrome://extensions → Load unpacked → done.
+
+License
+MIT.
