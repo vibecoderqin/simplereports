@@ -1,6 +1,6 @@
 # TS Reporter
 
-A Chrome extension for automating Twitch reports in incognito mode.
+**A Chrome extension for automating Twitch reports in incognito mode.**
 
 > **⚠️ Disclaimer:** This extension is not affiliated with Twitch. Automating reports may violate Twitch's Terms of Service. Use at your own risk.
 
@@ -40,8 +40,8 @@ A Chrome extension for automating Twitch reports in incognito mode.
 ## Usage
 
 1. Open an **incognito window** (Ctrl+Shift+N / ⌘+Shift+N).
-2. Navigate to any Twitch channel (e.g. `https://www.twitch.tv/somechannel`).
-3. A panel titled **🪱 TS Reporter** will appear. If it doesn't, try refreshing the page.
+2. Navigate to any Twitch channel (e.g., `https://www.twitch.tv/somechannel`).
+3. A panel titled **TS Reporter** will appear. If it doesn't, try refreshing the page.
 4. Configure the settings in the panel (see below).
 5. Load a `.reports` file containing your report descriptions.
 6. Click **Run**. The extension will start automating the report process.
@@ -59,7 +59,7 @@ A Chrome extension for automating Twitch reports in incognito mode.
 | Setting | Description |
 |--------|-------------|
 | **Content type** | Chat Messages, Whispers, Username, User (Avatar, etc.), Off Twitch Behavior |
-| **Reason (parent)** | Main report reason (e.g. Hateful Conduct, Spam, etc.) |
+| **Reason (parent)** | Main report reason (e.g., Hateful Conduct, Spam, etc.) |
 | **Detailed reason** | Sub‑reason (if applicable) |
 | **Delay min / max (ms)** | Random delay range between steps |
 | **Timeout (ms)** | Maximum time to wait for each wizard step |
@@ -69,19 +69,11 @@ A Chrome extension for automating Twitch reports in incognito mode.
 
 ### `.reports` file format
 
-The `.reports` file is a plain text file where each **variant** is separated by a line starting with `$`.  
-A variant can span multiple lines.
+The `.reports` file is a plain text file where each **variant** is separated by a line starting with `$`. A variant can span multiple lines.
 
 Example:
-```
-$This is the first report description.
-$This is the second one.
-It can span multiple lines.
-$Third variant with a single line.
-```
 
-The extension picks variants in random order, tracking which ones have been used.  
-When all variants are used, the cycle resets and they become available again.
+The extension picks variants in random order, tracking which ones have been used. When all variants are used, the cycle resets and they become available again.
 
 ---
 
@@ -95,6 +87,7 @@ The dashboard (options page) provides a full overview:
 - **Emails used** – table of generated emails with channel, reason, detailed reason, User‑Agent, and timestamp. Copy all or clear.
 
 You can open the dashboard from:
+
 - the panel's **Open Dashboard** button
 - `chrome://extensions` → TS Reporter → **Extension options**
 - right‑click the extension icon → **Options**
@@ -105,47 +98,55 @@ You can open the dashboard from:
 
 ## How It Works
 
-- **`content.js`** runs on `https://www.twitch.tv/*` but exits immediately if not in incognito.
-- It injects the panel and, when **Run** is clicked, executes a state machine (`STEPS`) that:
+- **`content.js`** runs on `https://www.twitch.tv/*` but exits immediately if not in incognito.  
+  It injects the panel and, when **Run** is clicked, executes a state machine (`STEPS`) that:
   1. Opens the channel menu.
   2. Clicks "Report Channel".
   3. Clicks "File a Report".
   4. Navigates the wizard: content type → reason → (search results) → detailed reason → description → verify + email → submit → close confirmation.
-- Each step waits for a specific element, applies a random delay, and performs the action.
-- On timeout it retries; after all retries it can reload the page and resume automatically.
+
+  Each step waits for a specific element, applies a random delay, and performs the action. On timeout it retries; after all retries it can reload the page and resume automatically.
+
 - **`background.js`** handles:
   - User‑Agent rotation (`ROTATE_UA`) using `declarativeNetRequest`.
   - Opening the dashboard (`OPEN_DASHBOARD`).
   - Notifications.
+
 - **`options.js`** powers the dashboard UI and syncs with `chrome.storage.local`.
 
-All data is stored locally under these keys:
-- `tsr_settings_v1`
-- `tsr_progress_v1`
-- `tsr_debug_v1`
-- `tsr_emails_v1`
-- `tsr_target_channel_v1`
-- `tsr_panel_pos_v1`
-- `tsr_resume_v1`
+All data is stored locally under these keys:  
+`tsr_settings_v1`, `tsr_progress_v1`, `tsr_debug_v1`, `tsr_emails_v1`, `tsr_target_channel_v1`, `tsr_panel_pos_v1`, `tsr_resume_v1`.
 
-No data is sent to external servers.
+**No data is sent to external servers.**
+
+---
+
+## Anti‑Abuse Bypasses
+
+To reduce the likelihood of detection while automating reports, the extension implements several countermeasures:
+
+- **Incognito‑only execution** – the content script bails out in normal windows, so the automation never touches a logged‑in session. Every report is filed from a clean, isolated context.
+- **User‑Agent rotation** – `background.js` rotates the `User-Agent` header for Twitch requests using `declarativeNetRequest`. This prevents simple UA‑based fingerprinting across report submissions.
+- **Randomized delays** – each step in the report wizard is preceded by a random delay within the configured `delay min` / `delay max` range. This breaks the predictable timing pattern that automated tools usually exhibit.
+- **Retry with page reload** – on timeout or failure the extension retries the step; after exhausting retries it reloads the page and resumes from the correct state. This handles transient network issues and soft blocks without manual intervention.
+- **Random email generation** – every report uses a freshly generated email address, so the same identity is never reused across submissions. The extension never uses your real email.
+- **Cycle control** – you can limit the number of reports per session or run infinitely. Limiting cycles helps avoid sudden spikes in activity from a single client.
+- **Local‑only storage** – all settings, logs, and email history stay in `chrome.storage.local`. No external servers are contacted, eliminating a common vector for correlation and tracking.
+
+> **Note:** These bypasses are designed to make automated reporting less conspicuous, but no method is foolproof. Twitch may update its detection mechanisms at any time.
 
 ---
 
 ## File Structure
-
-```
-.
-├── manifest.json          # Extension manifest (MV3)
-├── background.js          # Service worker (UA rotation, dashboard opener, notifications)
-├── content.js             # Content script (panel UI + report automation)
-├── panel.css              # Styles for the injected panel
-├── options.html           # Dashboard page
-├── options.js             # Dashboard logic
-├── options.css            # Dashboard styles
-├── reasons.json           # Reference list of Twitch report reasons (not used directly)
+├── manifest.json # Extension manifest (MV3)
+├── background.js # Service worker (UA rotation, dashboard opener, notifications)
+├── content.js # Content script (panel UI + report automation)
+├── panel.css # Styles for the injected panel
+├── options.html # Dashboard page
+├── options.js # Dashboard logic
+├── options.css # Dashboard styles
+├── reasons.json # Reference list of Twitch report reasons (not used directly)
 └── README.md
-```
 
 ---
 
@@ -156,3 +157,9 @@ No data is sent to external servers.
 - **Random emails** – the extension generates random email addresses for the report form; it never uses your real email.
 - **Local storage** – all settings, logs, and email history are stored in `chrome.storage.local` and never leave your browser.
 - **No warranty** – this software is provided as‑is, without any guarantees.
+
+---
+
+## License
+
+See the [LICENSE](LICENSE) file for details.
