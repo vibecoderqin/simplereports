@@ -129,9 +129,7 @@
     "gmail.com", "hotmail.com", "yahoo.com", "outlook.com", "icloud.com",
     "aol.com", "mail.ru", "bk.ru", "list.ru", "inbox.ru", "yandex.ru",
     "ya.ru", "qq.com", "web.de", "gmx.net", "rambler.ru", "me.com",
-    "mac.com", "atomicmail.io", "proton.me", "tutanota.com", "duck.com",
-    "protonmail.com", "onionmail.org", "onionmail.com", "2mail.co",
-    "mail2tor.co"
+    "mac.com", "atomicmail.io", "proton.me", "protonmail.com"
   ];
 
   function randomEmail() {

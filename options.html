@@ -33,6 +33,27 @@
 
   <main class="wrap">
 
+    <!-- ============ FINGERPRINT (NEW) ============ -->
+    <section class="card">
+      <div class="card-head">
+        <h2>fingerprint</h2>
+        <span class="muted" id="fp-note">incognito-only</span>
+      </div>
+      <div class="card-body">
+        <div class="progress-grid">
+          <div class="stat"><span class="stat-label">browser</span><span class="stat-val" id="fp-browser">—</span></div>
+          <div class="stat"><span class="stat-label">platform</span><span class="stat-val" id="fp-platform">—</span></div>
+          <div class="stat"><span class="stat-label">version</span><span class="stat-val" id="fp-version">—</span></div>
+          <div class="stat"><span class="stat-label">rate tokens</span><span class="stat-val" id="fp-rate">—</span></div>
+        </div>
+        <div class="row-buttons">
+          <button class="btn btn-ghost" id="btn-rotate-ua">rotate UA</button>
+          <button class="btn btn-danger" id="btn-clear-ua">clear rules</button>
+          <span class="muted" id="fp-ua-full" style="flex-basis:100%;word-break:break-all"></span>
+        </div>
+      </div>
+    </section>
+
     <section class="card">
       <div class="card-head">
         <h2>progress</h2>

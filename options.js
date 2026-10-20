@@ -3,8 +3,7 @@
 
   const HAS_EXT =
     typeof chrome !== "undefined" &&
-    chrome.storage &&
-    chrome.storage.local &&
+    chrome.storage && chrome.storage.local &&
     typeof chrome.storage.local.get === "function";
 
   function showWrongContext() {
@@ -15,14 +14,8 @@
     document.querySelectorAll("button, input, select, textarea")
       .forEach((el) => { el.disabled = true; });
     const live = document.getElementById("live-pill");
-    if (live) {
-      live.textContent = "offline";
-      live.classList.remove("live");
-    }
-    console.warn(
-      "[TS-Reporter/Dashboard] no chrome.storage — opened outside the extension. " +
-      "open via panel → open dashboard, or right-click extension icon → Options."
-    );
+    if (live) { live.textContent = "offline"; live.classList.remove("live"); }
+    console.warn("[TS-Reporter/Dashboard] no chrome.storage — wrong context.");
   }
 
   if (!HAS_EXT) { showWrongContext(); return; }
@@ -32,6 +25,7 @@
   const K_DEBUG    = "tsr_debug_v1";
   const K_EMAILS   = "tsr_emails_v1";
   const K_TARGET   = "tsr_target_channel_v1";
+  const K_RATE     = "tsr_rate_v2";
 
   const DEFAULT_SETTINGS = {
     content: "Chat Messages",
@@ -335,8 +329,63 @@
       .replace(/"/g, "&quot;");
   }
 
+  // ============================================================
+  // NEW: Fingerprint state
+  // ============================================================
+  async function refreshFingerprint() {
+    let profile = null;
+    let rate = null;
+
+    try {
+      const r = await chrome.runtime.sendMessage({ type: "READ_STATE" });
+      if (r && r.ok && r.data) {
+        profile = r.data.currentProfile || null;
+        rate = r.data.rate || null;
+      }
+    } catch { /* background may be down or non-incognito */ }
+
+    // Fallback: читаем напрямую
+    if (!profile) {
+      try {
+        const sess = await chrome.storage.session.get("tsr_profile_v1");
+        profile = sess?.tsr_profile_v1 || null;
+      } catch { /* ignore */ }
+    }
+    if (!rate) {
+      try {
+        const d = await chrome.storage.local.get(K_RATE);
+        rate = d[K_RATE] || null;
+      } catch { /* ignore */ }
+    }
+
+    $("fp-browser").textContent  = profile ? profile.browser : "—";
+    $("fp-platform").textContent = profile ? profile.platform : "—";
+    $("fp-version").textContent  = profile ? String(profile.version) : "—";
+    $("fp-rate").textContent     = rate ? `${rate.tokens}/${3}` : "3/3";
+    $("fp-ua-full").textContent  = profile ? profile.ua : "";
+  }
+
   function wireButtons() {
     $("btn-refresh").addEventListener("click", reloadAll);
+
+    // NEW: Rotate / Clear UA
+    $("btn-rotate-ua").addEventListener("click", async () => {
+      try {
+        const r = await chrome.runtime.sendMessage({ type: "ROTATE_UA" });
+        if (r && r.ok) flash(`UA rotated: ${r.browser} ${r.platform}`);
+        else flash("rotate failed: " + (r?.error || "unknown"));
+        refreshFingerprint();
+      } catch (e) { flash("rotate failed: " + e.message); }
+    });
+
+    $("btn-clear-ua").addEventListener("click", async () => {
+      try {
+        const r = await chrome.runtime.sendMessage({ type: "CLEAR_UA" });
+        if (r && r.ok) flash("fingerprint rules cleared");
+        else flash("clear failed: " + (r?.error || "unknown"));
+        refreshFingerprint();
+      } catch (e) { flash("clear failed: " + e.message); }
+    });
 
     $("btn-reset-progress").addEventListener("click", async () => {
       await chrome.storage.local.set({
@@ -404,8 +453,16 @@
         const active = document.activeElement?.id || "";
         if (!active.startsWith("s-")) applySettingsToForm();
       }
+      if (changes[K_RATE]) refreshFingerprint();
       loadProgressAndTarget();
     });
+
+    // session storage (profile) — тоже слушаем
+    try {
+      chrome.storage.session.onChanged.addListener((changes) => {
+        if (changes.tsr_profile_v1) refreshFingerprint();
+      });
+    } catch { /* ignore */ }
   }
 
   async function loadProgressAndTarget() {
@@ -420,6 +477,7 @@
     renderProgress(data[K_PROGRESS], settings, data[K_TARGET]);
     renderDebug(data[K_DEBUG] || []);
     renderEmails(data[K_EMAILS] || []);
+    await refreshFingerprint();
     flash("refreshed");
   }
 
