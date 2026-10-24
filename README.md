@@ -2,7 +2,7 @@
 
 **Incognito-only Twitch report automation with fingerprint anti-detect.**
 
-![version](https://img.shields.io/badge/version-2.0.1-a970ff)
+![version](https://img.shields.io/badge/version-2.2.0-a970ff)
 ![manifest](https://img.shields.io/badge/manifest-v3-9147ff)
 ![chrome](https://img.shields.io/badge/chrome-%E2%89%A5120-00c176)
 ![incognito](https://img.shields.io/badge/incognito-split-2f2f35)
