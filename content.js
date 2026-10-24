@@ -1394,6 +1394,21 @@
           state.progress.cycleCount >= state.settings.cycleLimit) {
         debugLog(`✔ cycle limit reached (${state.progress.cycleCount}/${state.settings.cycleLimit})`);
         setStatus("cycle limit reached — press 'reset cycles' or raise limit", "err");
+        // ИСПРАВЛЕНИЕ: DNR-правила в Chrome MV3 общие для обычного и инкогнито-контекстов.
+        // Без этого шага accept-language последнего спуф-профиля (например de-DE)
+        // «протекал» бы на обычные страницы браузера. Просим background переключить
+        // DNR на нейтральный en-US и снять JS-спуфинг.
+        try {
+          chrome.runtime.sendMessage({ type: "RESET_LANGUAGE_EN" }, (resp) => {
+            if (chrome.runtime.lastError) {
+              debugLog("reset-language failed: " + chrome.runtime.lastError.message);
+            } else if (resp && resp.ok) {
+              debugLog("language reset to en-US (DNR) after cycles finished");
+            }
+          });
+        } catch (e) {
+          debugLog("reset-language exception: " + e.message);
+        }
         return;
       }
 

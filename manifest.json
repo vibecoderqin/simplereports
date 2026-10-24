@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TS Reporter",
-  "version": "2.0.1",
+  "version": "2.2.0",
   "description": "Incognito-only reporting helper with fingerprint anti-detect.",
   "incognito": "split",
   "minimum_chrome_version": "120",
@@ -10,39 +10,66 @@
     "notifications",
     "declarativeNetRequest",
     "tabs",
-    "clipboardWrite"
+    "clipboardWrite",
+    "webNavigation",
+    "scripting"
   ],
-  "host_permissions": ["https://www.twitch.tv/*"],
+  "host_permissions": [
+    "https://twitch.tv/*",
+    "https://*.twitch.tv/*",
+    "https://*.jtvnw.net/*",
+    "https://*.ttvnw.net/*",
+    "https://*.twitchcdn.net/*",
+    "https://*.live-video.net/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "content_scripts": [
+  {
+    "matches": [
+      "https://twitch.tv/*",
+      "https://*.twitch.tv/*",
+      "https://abrahamjuliot.github.io/*"
+    ],
+    "js": ["content/isolated.js"],
+    "run_at": "document_start",
+    "all_frames": true,
+    "match_about_blank": true
+  },
+  {
+    "matches": [
+      "https://twitch.tv/*",
+      "https://*.twitch.tv/*",
+      "https://abrahamjuliot.github.io/*" 
+    ],
+    "js": ["content/injected.js"],
+    "run_at": "document_start",
+    "all_frames": true,
+    "match_about_blank": true,
+    "world": "MAIN"
+  },
     {
-      "matches": ["https://www.twitch.tv/*"],
-      "js": ["content/isolated.js"],
-      "run_at": "document_start",
-      "all_frames": true
-    },
-    {
-      "matches": ["https://www.twitch.tv/*"],
-      "js": ["content/injected.js"],
-      "run_at": "document_start",
-      "all_frames": true,
-      "world": "MAIN",
-      "match_about_blank": true
-    },
-    {
-      "matches": ["https://www.twitch.tv/*"],
+      "matches": ["https://twitch.tv/*", "https://*.twitch.tv/*"],
       "js": ["content.js"],
       "css": ["panel.css"],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["content/injected.js"],
+      "matches": ["https://twitch.tv/*", "https://*.twitch.tv/*"],
+      "use_dynamic_url": true
+    }
+  ],
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true
   },
-  "action": { "default_title": "TS Reporter (incognito only)" }
+  "action": {
+    "default_title": "TS Reporter (incognito only)"
+  }
 }

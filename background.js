@@ -7,6 +7,7 @@
 
 const INCOGNITO_ONLY = true;
 const RULE_ID_MAIN = 9001;
+const RULE_ID_DEFAULT = 9010;  // Нейтральный DNR-профиль (en-US) после завершения циклов
 const LEGACY_IDS   = [9001, 9002, 9003, 9004, 9005];
 const SETTINGS_KEY = "tsr_settings_v1";
 const RATE_KEY     = "tsr_rate_v2";
@@ -137,6 +138,20 @@ function enrichProfile(p) {
     p.browser === "chrome" ? "Google Inc." :
     p.browser === "safari" ? "Apple Computer, Inc." : "";
   const lang = LANG_POOL[(Math.random() * LANG_POOL.length) | 0];
+  const hardwareConcurrency =
+    p.platform === "Windows" ? 8 :
+    p.platform === "macOS"   ? 10 :
+    p.platform === "Linux"   ? 4 : 8;
+  const deviceMemory =
+    p.platform === "Windows" ? 8 :
+    p.platform === "macOS"   ? 16 :
+    p.platform === "Linux"   ? 4 : 8;
+
+  const platformVersion =
+    p.platform === "Windows" ? "10.0.0" :
+    p.platform === "macOS"   ? "15.8.0" :
+    p.platform === "Linux"   ? "6.5.0" : "10.0.0";
+
   const out = {
     browser: p.browser,
     platform: p.platform,
@@ -148,8 +163,12 @@ function enrichProfile(p) {
     platformName,
     vendor,
     languages: lang.list.slice(),
-    acceptLanguage: lang.tag
+    acceptLanguage: lang.tag,
+    hardwareConcurrency,
+    deviceMemory,
+    platformVersion
   };
+
   if (p.browser === "chrome") {
     out.uaBrands = [
       { brand: "Chromium",      version: major },
@@ -161,14 +180,15 @@ function enrichProfile(p) {
       { brand: "Not(A:Brand",   version: "24.0.0.0" },
       { brand: "Google Chrome", version: p.version }
     ];
-    out.platformVersion =
-      p.platform === "Windows" ? "10.0.0" :
-      p.platform === "macOS"   ? "15.8.0" : "6.5.0";
   }
   if (p.browser === "firefox") {
     out.oscpu =
       p.platform === "Windows" ? "Windows NT 10.0; Win64; x64" :
       p.platform === "macOS"   ? "Intel Mac OS X 15.8" : "Linux x86_64";
+  }
+  if (p.browser === "safari") {
+    out.uaBrands = [];
+    out.fullVersionList = [];
   }
   return out;
 }
@@ -229,6 +249,39 @@ function buildRequestHeaders(profile) {
   return headers;
 }
 
+// Записывает профиль в localStorage страницы и рассылает postMessage
+// во все фреймы вкладки. Это нужно, потому что injected.js работает
+// в MAIN world и не имеет доступа к chrome.storage.
+async function syncProfileToTab(tabId, profile) {
+  if (typeof tabId !== "number") return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      args: [profile],
+      func: (p) => {
+        try {
+          if (p) {
+            localStorage.setItem("__tsr_profile_v1", JSON.stringify(p));
+            window.postMessage({ __tsr: 1, type: "CONFIG", profile: p }, "*");
+          } else {
+            localStorage.removeItem("__tsr_profile_v1");
+            window.postMessage({ __tsr: 1, type: "CONFIG", profile: null }, "*");
+          }
+        } catch { /* sandboxed frame */ }
+      }
+    });
+  } catch (e) {
+    // executeScript падает на sandboxed iframe без host-прав — это нормально
+    log("syncProfileToTab scripting failed", tabId, e?.message || String(e));
+  }
+  // Параллельно уведомляем isolated-world content script (isolated.js),
+  // который может иметь свою логику и переслать сообщение в injected.js.
+  try {
+    chrome.tabs.sendMessage(tabId, { type: "PROFILE_UPDATED", profile }).catch(() => {});
+  } catch { /* ignore */ }
+}
+
 async function applyProfile(profile) {
   const headers = buildRequestHeaders(profile);
 
@@ -244,37 +297,105 @@ async function applyProfile(profile) {
   ];
 
   await chrome.declarativeNetRequest.updateSessionRules({
-    removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS),
+    // RULE_ID_DEFAULT тоже удаляем: если пользователь завершал циклы раньше,
+    // на этот момент в DNR висит нейтральный en-US-профиль, его надо заменить
+    // полноценным спуфом.
+    removeRuleIds: [RULE_ID_MAIN, RULE_ID_DEFAULT].concat(LEGACY_IDS),
     addRules: rules
   });
 
   try { await chrome.storage.session.set({ [PROFILE_KEY]: profile }); } catch { /* ignore */ }
 
+  // Синхронизация со всеми фреймами во всех incognito-вкладках Twitch.
   try {
     const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-      if (!t.incognito || typeof t.id !== "number") continue;
-      chrome.tabs.sendMessage(t.id, { type: "PROFILE_UPDATED", profile }).catch(() => {});
-    }
+    await Promise.all(
+      tabs
+        .filter(t =>
+          t.incognito &&
+          typeof t.id === "number" &&
+          /^https?:\/\/([^/]+\.)?twitch\.tv\//.test(t.url || "")
+        )
+        .map(t => syncProfileToTab(t.id, profile))
+    );
   } catch (e) { log("profile broadcast failed", e); }
 
-  log("profile applied:", profile.browser, profile.major, profile.platform, "→", profile.version, profile.acceptLanguage);
+  log("profile applied:", profile.browser, profile.major, profile.platform, "→", profile.version, profile.acceptLanguage,
+      "| hc:", profile.hardwareConcurrency, "dm:", profile.deviceMemory);
 }
 
 async function clearRules() {
   try {
     await chrome.declarativeNetRequest.updateSessionRules({
-      removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS)
+      removeRuleIds: [RULE_ID_MAIN, RULE_ID_DEFAULT].concat(LEGACY_IDS)
     });
   } catch (e) { log("clearSessionRules failed", e); }
   try { await chrome.storage.session.remove(PROFILE_KEY); } catch { /* ignore */ }
+
+  // Стираем профиль из localStorage страницы и уведомляем injected.js,
+  // чтобы он перестал подменять отпечатки (возврат к «нативному» виду).
+  // Патчим только Twitch-вкладки — на остальных executeScript упадёт.
   try {
     const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-      if (!t.incognito || typeof t.id !== "number") continue;
-      chrome.tabs.sendMessage(t.id, { type: "PROFILE_UPDATED", profile: null }).catch(() => {});
-    }
+    await Promise.all(
+      tabs
+        .filter(t =>
+          t.incognito &&
+          typeof t.id === "number" &&
+          /^https?:\/\/([^/]+\.)?twitch\.tv\//.test(t.url || "")
+        )
+        .map(t => syncProfileToTab(t.id, null))
+    );
   } catch { /* ignore */ }
+}
+
+// ИСПРАВЛЕНИЕ: DNR session-правила в Chrome MV3 живут на уровне браузера
+// и видны как инкогнито-, так и обычным страницам. Без этого шага
+// accept-language последнего спуф-профиля (например de-DE) оставался в DNR
+// после завершения всех циклов и «протекал» на обычные страницы.
+// Функция ставит нейтральное правило RULE_ID_DEFAULT: только
+// accept-language: en-US,en;q=0.9 — и чистит JS-спуфинг во всех
+// инкогнито-вкладках Twitch (injected.js видит profile=null и перестаёт
+// подменять отпечатки). Следующий ROTATE_UA / applyProfile снимет
+// RULE_ID_DEFAULT и поставит полноценный спуф-профиль.
+async function resetLanguageToEnglish() {
+  try {
+    const rule = {
+      id: RULE_ID_DEFAULT,
+      priority: 1,
+      action: {
+        type: "modifyHeaders",
+        requestHeaders: [
+          { header: "accept-language", operation: "set", value: "en-US,en;q=0.9" }
+        ]
+      },
+      condition: { requestDomains: SPOOF_DOMAINS.slice() }
+    };
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS),
+      addRules: [rule]
+    });
+  } catch (e) {
+    log("resetLanguageToEnglish: DNR update failed", e);
+    return;
+  }
+
+  try { await chrome.storage.session.remove(PROFILE_KEY); } catch { /* ignore */ }
+
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(
+      tabs
+        .filter(t =>
+          t.incognito &&
+          typeof t.id === "number" &&
+          /^https?:\/\/([^/]+\.)?twitch\.tv\//.test(t.url || "")
+        )
+        .map(t => syncProfileToTab(t.id, null))
+    );
+  } catch (e) { log("resetLanguageToEnglish: tab sync failed", e); }
+
+  log("resetLanguageToEnglish: DNR forced en-US; JS spoofing cleared");
 }
 
 async function migrateLegacyDynamicRules() {
@@ -351,7 +472,23 @@ async function ensureSessionStorageAccess() {
 
 async function bootstrap() {
   await migrateLegacyDynamicRules();
-  if (!isIncognitoContext()) { log("normal context — inactive"); return; }
+
+  if (!isIncognitoContext()) {
+    // ИСПРАВЛЕНИЕ: в нормальном (non-incognito) контексте прибираем за собой.
+    // В split-режиме сессионные правила не должны переходить из incognito,
+    // но если апдейт произошёл без рестарта браузера — старые session-rules
+    // предыдущей версии могли пережить и подменять accept-language на
+    // нормальном Twitch. Сносим их здесь.
+    try {
+      await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS)
+      });
+      log("normal-context: DNR session rules cleaned defensively");
+    } catch (e) { log("normal-context DNR cleanup failed", e); }
+    log("normal context — inactive");
+    return;
+  }
+
   await ensureSessionStorageAccess();
   try {
     const existing = await chrome.declarativeNetRequest.getSessionRules();
@@ -369,6 +506,15 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   const url = tab.url || "";
   if (!/^https?:\/\/([^/]+\.)?twitch\.tv\//.test(url)) return;
 
+  // 1) Всегда синхронизируем текущий профиль в новую/перезагруженную вкладку.
+  try {
+    const sess = await chrome.storage.session.get(PROFILE_KEY);
+    if (sess[PROFILE_KEY]) {
+      await syncProfileToTab(tabId, sess[PROFILE_KEY]);
+    }
+  } catch (e) { log("sync on tab update failed", e); }
+
+  // 2) Опциональная ротация.
   try {
     const s = await chrome.storage.local.get(ROT_KEY);
     const last = s[ROT_KEY] || 0;
@@ -379,6 +525,44 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     await chrome.storage.local.set({ [ROT_KEY]: Date.now() });
     log("auto-rotated on nav:", profile.browser, profile.major);
   } catch (e) { log("auto-rotate failed", e); }
+});
+
+chrome.webNavigation.onCommitted.addListener(async (details) => {
+  if (details.frameId === 0) return;
+  if (!isIncognitoContext()) return;
+
+  const isTwitch = /^https?:\/\/([^/]+\.)?twitch\.tv\//.test(details.url);
+  const isBlank =
+    details.url.startsWith("about:blank") ||
+    details.url.startsWith("about:srcdoc");
+  if (!isTwitch && !isBlank) return;
+
+  try {
+    const sess = await chrome.storage.session.get(PROFILE_KEY);
+    const profile = sess[PROFILE_KEY];
+    if (!profile) return;
+
+    await chrome.scripting.executeScript({
+      target: { tabId: details.tabId, frameIds: [details.frameId] },
+      world: "MAIN",
+      args: [profile],
+      func: (p) => {
+        try {
+          localStorage.setItem("__tsr_profile_v1", JSON.stringify(p));
+          window.postMessage({ __tsr: 1, type: "CONFIG", profile: p }, "*");
+        } catch { /* sandboxed */ }
+      }
+    });
+    log("iframe profile synced", details.tabId, details.frameId);
+  } catch (e) {
+    log("iframe profile sync failed", details.tabId, details.frameId, e?.message || String(e));
+  }
+}, {
+  url: [
+    { hostSuffix: "twitch.tv" },
+    { urlPrefix: "about:blank" },
+    { urlPrefix: "about:srcdoc" }
+  ]
 });
 
 async function openDashboard(sender) {
@@ -471,6 +655,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       );
       return true;
     }
+    // ИСПРАВЛЕНИЕ: завершение всех циклов — переводим DNR в нейтральный en-US
+    // (см. resetLanguageToEnglish выше). Это предотвращает утечку
+    // случайного accept-language последнего спуф-профиля на обычные страницы.
+    case "RESET_LANGUAGE_EN": {
+      resetLanguageToEnglish().then(
+        () => sendResponse({ ok: true }),
+        e => sendResponse({ ok: false, error: String(e) })
+      );
+      return true;
+    }
     case "OPEN_DASHBOARD": {
       (async () => {
         try {
@@ -513,6 +707,7 @@ chrome.runtime.onStartup.addListener(() => { log("startup"); bootstrap(); });
 chrome.windows.onCreated.addListener((win) => {
   log("window created", { id: win.id, incognito: win.incognito });
   if (win.incognito) bootstrap();
+  else bootstrap(); // defensive: run normal-context cleanup on new window too
 });
 
 (async () => {

@@ -18,10 +18,12 @@
     } catch { /* ignore */ }
   }
 
+  // ВАЖНО: post() должен отправлять и profile=null — иначе при CLEAR_UA
+  // injected.js в текущей вкладке не узнает об очистке (когда сигнал приходит
+  // через storage.onChanged или PROFILE_UPDATED, а не через executeScript).
   function post(profile) {
-    if (!profile) return;
     try {
-      window.postMessage({ __tsr: 1, type: "CONFIG", profile }, TARGET_ORIGIN);
+      window.postMessage({ __tsr: 1, type: "CONFIG", profile: profile || null }, TARGET_ORIGIN);
     } catch { /* ignore */ }
   }
 
@@ -63,8 +65,7 @@
     chrome.storage.session.onChanged.addListener((changes) => {
       if (changes[PROFILE_KEY]) {
         const p = changes[PROFILE_KEY].newValue || null;
-        if (p) apply(p);
-        else   writeLS(null);
+        apply(p);
       }
     });
   } catch { /* session access недоступен */ }
@@ -73,9 +74,7 @@
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (!msg || msg.type !== "PROFILE_UPDATED") return;
-      const p = msg.profile || null;
-      if (p) apply(p);
-      else   writeLS(null);
+      apply(msg.profile || null);
     });
   } catch { /* ignore */ }
 })();
