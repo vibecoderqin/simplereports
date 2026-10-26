@@ -60,71 +60,127 @@ function isIncognitoSender(sender) {
   return sender?.tab?.incognito === true || isIncognitoContext();
 }
 
+// ------------------------------------------------------------
+// Пул профилей (актуально на октябрь 2026)
+// ------------------------------------------------------------
 const PROFILES = [
+  // ----- Chrome 156 (stable, Oct 2026) -----
   {
     browser: "chrome", platform: "Windows", mobile: false,
-    version: "154.0.7988.92", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.7988.92 Safari/537.36"
+    version: "156.0.8078.47", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
   },
   {
     browser: "chrome", platform: "Windows", mobile: false,
-    version: "153.0.7932.76", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7932.76 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "152.0.7891.115", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7891.115 Safari/537.36"
+    version: "156.0.8078.48", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.48 Safari/537.36"
   },
   {
     browser: "chrome", platform: "macOS", mobile: false,
-    version: "154.0.7988.92", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.7988.92 Safari/537.36"
+    version: "156.0.8078.47", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Linux", mobile: false,
+    version: "156.0.8078.47", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
+  },
+  // ----- Chrome 155 (stable, Oct 2026) -----
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "155.0.8059.84", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "155.0.8059.85", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.85 Safari/537.36"
   },
   {
     browser: "chrome", platform: "macOS", mobile: false,
-    version: "153.0.7932.76", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7932.76 Safari/537.36"
+    version: "155.0.8059.84", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
   },
   {
     browser: "chrome", platform: "Linux", mobile: false,
-    version: "154.0.7988.92", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.7988.92 Safari/537.36"
+    version: "155.0.8059.84", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
   },
-  {
-    browser: "chrome", platform: "Linux", mobile: false,
-    version: "153.0.7932.76", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7932.76 Safari/537.36"
-  },
+  // ----- Firefox 158 (stable, Oct 2026) -----
   {
     browser: "firefox", platform: "Windows", mobile: false,
-    version: "156.0", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) Gecko/20100101 Firefox/156.0"
-  },
-  {
-    browser: "firefox", platform: "Windows", mobile: false,
-    version: "155.0", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0"
+    version: "158.0", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0"
   },
   {
     browser: "firefox", platform: "macOS", mobile: false,
-    version: "156.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:156.0) Gecko/20100101 Firefox/156.0"
+    version: "158.0", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:158.0) Gecko/20100101 Firefox/158.0"
   },
   {
     browser: "firefox", platform: "Linux", mobile: false,
-    version: "156.0", ua:
-    "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0"
+    version: "158.0", ua:
+    "Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0"
   },
+  // ----- Firefox 157 (stable, Sep 2026) -----
+  {
+    browser: "firefox", platform: "Windows", mobile: false,
+    version: "157.0", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:157.0) Gecko/20100101 Firefox/157.0"
+  },
+  {
+    browser: "firefox", platform: "macOS", mobile: false,
+    version: "157.0", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:157.0) Gecko/20100101 Firefox/157.0"
+  },
+  {
+    browser: "firefox", platform: "Linux", mobile: false,
+    version: "157.0", ua:
+    "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
+  },
+  // ----- Safari 27.0 (macOS, Sep 2026) -----
   {
     browser: "safari", platform: "macOS", mobile: false,
     version: "27.0", ua:
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15"
   },
+  // ----- Safari 26.6 (macOS, Jul 2026) -----
   {
     browser: "safari", platform: "macOS", mobile: false,
-    version: "26.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+    version: "26.6", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15"
+  },
+  // ----- Microsoft Edge 156 (stable, Oct 2026) -----
+  {
+    browser: "edge", platform: "Windows", mobile: false,
+    version: "156.0.4314.42", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42"
+  },
+  {
+    browser: "edge", platform: "macOS", mobile: false,
+    version: "156.0.4314.42", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42"
+  },
+  {
+    browser: "edge", platform: "Linux", mobile: false,
+    version: "156.0.4314.42", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42"
+  },
+  // ----- Microsoft Edge 155 (stable, Oct 2026) -----
+  {
+    browser: "edge", platform: "Windows", mobile: false,
+    version: "155.0.4283.62", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62"
+  },
+  {
+    browser: "edge", platform: "macOS", mobile: false,
+    version: "155.0.4283.62", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62"
+  },
+  {
+    browser: "edge", platform: "Linux", mobile: false,
+    version: "155.0.4283.62", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62"
   }
 ];
 
@@ -136,6 +192,7 @@ function enrichProfile(p) {
     p.platform === "Linux"   ? "Linux x86_64" : "Win32";
   const vendor =
     p.browser === "chrome" ? "Google Inc." :
+    p.browser === "edge"   ? "Microsoft Corporation" :
     p.browser === "safari" ? "Apple Computer, Inc." : "";
   const lang = LANG_POOL[(Math.random() * LANG_POOL.length) | 0];
   const hardwareConcurrency =
@@ -169,16 +226,18 @@ function enrichProfile(p) {
     platformVersion
   };
 
-  if (p.browser === "chrome") {
+  // ----- Chrome / Edge (Chromium-based) -----
+  if (p.browser === "chrome" || p.browser === "edge") {
+    const brandName = p.browser === "edge" ? "Microsoft Edge" : "Google Chrome";
     out.uaBrands = [
       { brand: "Chromium",      version: major },
       { brand: "Not(A:Brand",   version: "24" },
-      { brand: "Google Chrome", version: major }
+      { brand: brandName,       version: major }
     ];
     out.fullVersionList = [
       { brand: "Chromium",      version: p.version },
       { brand: "Not(A:Brand",   version: "24.0.0.0" },
-      { brand: "Google Chrome", version: p.version }
+      { brand: brandName,       version: p.version }
     ];
   }
   if (p.browser === "firefox") {
@@ -207,10 +266,19 @@ async function pickProfile() {
   return enrichProfile(raw);
 }
 
-function buildSecChUa(major, grease) {
+function buildSecChUa(browser, major, grease) {
+  if (browser === "edge") {
+    return `"Microsoft Edge";v="${major}", "Chromium";v="${major}", "Not(A:Brand";v="${grease}"`;
+  }
+  // chrome (default)
   return `"Chromium";v="${major}", "Not(A:Brand";v="${grease}", "Google Chrome";v="${major}"`;
 }
-function buildFullVersionList(fullVersion, grease) {
+
+function buildFullVersionList(browser, fullVersion, grease) {
+  if (browser === "edge") {
+    return `"Microsoft Edge";v="${fullVersion}", "Chromium";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0"`;
+  }
+  // chrome (default)
   return `"Chromium";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0", "Google Chrome";v="${fullVersion}"`;
 }
 
@@ -220,13 +288,14 @@ function buildRequestHeaders(profile) {
     { header: "accept-language", operation: "set", value: profile.acceptLanguage }
   ];
 
-  if (profile.browser === "chrome") {
+  // Chromium-based браузеры (Chrome и Edge) отправляют Client Hints
+  if (profile.browser === "chrome" || profile.browser === "edge") {
     const v = profile.version, m = profile.major, g = 24;
     headers.push(
-      { header: "sec-ch-ua",                   operation: "set", value: buildSecChUa(m, g) },
+      { header: "sec-ch-ua",                   operation: "set", value: buildSecChUa(profile.browser, m, g) },
       { header: "sec-ch-ua-mobile",            operation: "set", value: profile.mobile ? "?1" : "?0" },
       { header: "sec-ch-ua-platform",          operation: "set", value: `"${profile.platform}"` },
-      { header: "sec-ch-ua-full-version-list", operation: "set", value: buildFullVersionList(v, g) }
+      { header: "sec-ch-ua-full-version-list", operation: "set", value: buildFullVersionList(profile.browser, v, g) }
     );
   } else {
     headers.push(
@@ -297,9 +366,6 @@ async function applyProfile(profile) {
   ];
 
   await chrome.declarativeNetRequest.updateSessionRules({
-    // RULE_ID_DEFAULT тоже удаляем: если пользователь завершал циклы раньше,
-    // на этот момент в DNR висит нейтральный en-US-профиль, его надо заменить
-    // полноценным спуфом.
     removeRuleIds: [RULE_ID_MAIN, RULE_ID_DEFAULT].concat(LEGACY_IDS),
     addRules: rules
   });
@@ -332,9 +398,6 @@ async function clearRules() {
   } catch (e) { log("clearSessionRules failed", e); }
   try { await chrome.storage.session.remove(PROFILE_KEY); } catch { /* ignore */ }
 
-  // Стираем профиль из localStorage страницы и уведомляем injected.js,
-  // чтобы он перестал подменять отпечатки (возврат к «нативному» виду).
-  // Патчим только Twitch-вкладки — на остальных executeScript упадёт.
   try {
     const tabs = await chrome.tabs.query({});
     await Promise.all(
@@ -349,15 +412,9 @@ async function clearRules() {
   } catch { /* ignore */ }
 }
 
-// ИСПРАВЛЕНИЕ: DNR session-правила в Chrome MV3 живут на уровне браузера
-// и видны как инкогнито-, так и обычным страницам. Без этого шага
-// accept-language последнего спуф-профиля (например de-DE) оставался в DNR
-// после завершения всех циклов и «протекал» на обычные страницы.
-// Функция ставит нейтральное правило RULE_ID_DEFAULT: только
-// accept-language: en-US,en;q=0.9 — и чистит JS-спуфинг во всех
-// инкогнито-вкладках Twitch (injected.js видит profile=null и перестаёт
-// подменять отпечатки). Следующий ROTATE_UA / applyProfile снимет
-// RULE_ID_DEFAULT и поставит полноценный спуф-профиль.
+// Нейтральный DNR-профиль (en-US) после завершения циклов.
+// Предотвращает «протекание» accept-language последнего спуф-профиля
+// на обычные страницы браузера.
 async function resetLanguageToEnglish() {
   try {
     const rule = {
@@ -474,11 +531,6 @@ async function bootstrap() {
   await migrateLegacyDynamicRules();
 
   if (!isIncognitoContext()) {
-    // ИСПРАВЛЕНИЕ: в нормальном (non-incognito) контексте прибираем за собой.
-    // В split-режиме сессионные правила не должны переходить из incognito,
-    // но если апдейт произошёл без рестарта браузера — старые session-rules
-    // предыдущей версии могли пережить и подменять accept-language на
-    // нормальном Twitch. Сносим их здесь.
     try {
       await chrome.declarativeNetRequest.updateSessionRules({
         removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS)
@@ -655,9 +707,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       );
       return true;
     }
-    // ИСПРАВЛЕНИЕ: завершение всех циклов — переводим DNR в нейтральный en-US
-    // (см. resetLanguageToEnglish выше). Это предотвращает утечку
-    // случайного accept-language последнего спуф-профиля на обычные страницы.
     case "RESET_LANGUAGE_EN": {
       resetLanguageToEnglish().then(
         () => sendResponse({ ok: true }),
