@@ -1051,7 +1051,11 @@
             return resolve(null);
           }
           if (resp && resp.ok && resp.ua) {
-            const tail = resp.ua.match(/(Chrome|Firefox|Edg)\/[\d.]+/);
+            // ИСПРАВЛЕНИЕ: приоритет Edg/ над Chrome/ в UA Edge
+            // (Chromium-токен "Chrome/X.0.0.0" идёт первым и раньше
+            // матчился вместо реальной версии Edge).
+            let tail = resp.ua.match(/Edg\/[\d.]+/);
+            if (!tail) tail = resp.ua.match(/(Chrome|Firefox)\/[\d.]+/);
             debugLog("UA rotated: " + (tail ? "…" + tail[0] : "…" + resp.ua.slice(-30)));
             state.progress.lastUA = resp.ua;
             persistSoon();
@@ -1178,7 +1182,7 @@
 
         if (!clickRadioBySlug("reason-select-radio-group", "searching-other", wizard) &&
             !clickRadioByAnyLabel("reason-select-radio-group",
-              ["Search", "Rechercher", "Buscar", "Pesquisar", "Suchen", "Cerca", "Поиск", "Ara", "搜索", "検索", "검색"],
+              ["Search", "Rechercher", "Buscar", "Pesquisar", "Suchen", "Cerca", "Поиск", "Ara", "搜索", "検索", "検索", "검색"],
               wizard)) {
           throw new Error(`Search radio not found (reason="${parentName}")`);
         }
@@ -1394,10 +1398,6 @@
           state.progress.cycleCount >= state.settings.cycleLimit) {
         debugLog(`✔ cycle limit reached (${state.progress.cycleCount}/${state.settings.cycleLimit})`);
         setStatus("cycle limit reached — press 'reset cycles' or raise limit", "err");
-        // ИСПРАВЛЕНИЕ: DNR-правила в Chrome MV3 общие для обычного и инкогнито-контекстов.
-        // Без этого шага accept-language последнего спуф-профиля (например de-DE)
-        // «протекал» бы на обычные страницы браузера. Просим background переключить
-        // DNR на нейтральный en-US и снять JS-спуфинг.
         try {
           chrome.runtime.sendMessage({ type: "RESET_LANGUAGE_EN" }, (resp) => {
             if (chrome.runtime.lastError) {
