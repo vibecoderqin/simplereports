@@ -61,10 +61,10 @@ function isIncognitoSender(sender) {
 }
 
 // ------------------------------------------------------------
-// Пул профилей (актуально на октябрь 2026)
+// Пул профилей (актуально на октябрь 2026 + предыдущие 6 месяцев)
 // ------------------------------------------------------------
 const PROFILES = [
-  // ----- Chrome 156 (stable, Oct 2026) -----
+  // ===== Chrome 156 (stable, Oct 2026) =====
   {
     browser: "chrome", platform: "Windows", mobile: false,
     version: "156.0.8078.47", ua:
@@ -85,7 +85,8 @@ const PROFILES = [
     version: "156.0.8078.47", ua:
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
   },
-  // ----- Chrome 155 (stable, Oct 2026) -----
+
+  // ===== Chrome 155 (stable, Oct 2026) =====
   {
     browser: "chrome", platform: "Windows", mobile: false,
     version: "155.0.8059.84", ua:
@@ -106,7 +107,103 @@ const PROFILES = [
     version: "155.0.8059.84", ua:
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
   },
-  // ----- Firefox 158 (stable, Oct 2026) -----
+
+  // ===== Chrome 154 (stable, Sep 2026) =====
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "154.0.8037.92", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "154.0.8037.93", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.93 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "macOS", mobile: false,
+    version: "154.0.8037.92", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Linux", mobile: false,
+    version: "154.0.8037.92", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
+  },
+
+  // ===== Chrome 153 (stable, Sep 2026) =====
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "153.0.7988.92", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7988.92 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "153.0.7988.93", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7988.93 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "macOS", mobile: false,
+    version: "153.0.7988.92", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7988.92 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Linux", mobile: false,
+    version: "153.0.7988.92", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7988.92 Safari/537.36"
+  },
+
+  // ===== Chrome 152 (stable, Aug 2026) =====
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "152.0.7891.115", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7891.115 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "macOS", mobile: false,
+    version: "152.0.7891.115", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7891.115 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Linux", mobile: false,
+    version: "152.0.7891.115", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7891.115 Safari/537.36"
+  },
+
+  // ===== Chrome 151 (stable, Aug 2026) =====
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "151.0.7813.56", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7813.56 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "macOS", mobile: false,
+    version: "151.0.7813.56", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7813.56 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Linux", mobile: false,
+    version: "151.0.7813.56", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7813.56 Safari/537.36"
+  },
+
+  // ===== Chrome 150 (stable, Jul 2026) =====
+  {
+    browser: "chrome", platform: "Windows", mobile: false,
+    version: "150.0.7742.92", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "macOS", mobile: false,
+    version: "150.0.7742.92", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
+  },
+  {
+    browser: "chrome", platform: "Linux", mobile: false,
+    version: "150.0.7742.92", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
+  },
+
+  // ===== Firefox 158 (stable, Oct 2026) =====
   {
     browser: "firefox", platform: "Windows", mobile: false,
     version: "158.0", ua:
@@ -122,7 +219,8 @@ const PROFILES = [
     version: "158.0", ua:
     "Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0"
   },
-  // ----- Firefox 157 (stable, Sep 2026) -----
+
+  // ===== Firefox 157 (stable, Sep 2026) =====
   {
     browser: "firefox", platform: "Windows", mobile: false,
     version: "157.0", ua:
@@ -138,19 +236,111 @@ const PROFILES = [
     version: "157.0", ua:
     "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
   },
-  // ----- Safari 27.0 (macOS, Sep 2026) -----
+
+  // ===== Firefox 156 (stable, Sep 2026) =====
+  {
+    browser: "firefox", platform: "Windows", mobile: false,
+    version: "156.0", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) Gecko/20100101 Firefox/156.0"
+  },
+  {
+    browser: "firefox", platform: "macOS", mobile: false,
+    version: "156.0", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:156.0) Gecko/20100101 Firefox/156.0"
+  },
+  {
+    browser: "firefox", platform: "Linux", mobile: false,
+    version: "156.0", ua:
+    "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0"
+  },
+
+  // ===== Firefox 155 (stable, Sep 2026) =====
+  {
+    browser: "firefox", platform: "Windows", mobile: false,
+    version: "155.0", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0"
+  },
+  {
+    browser: "firefox", platform: "macOS", mobile: false,
+    version: "155.0", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:155.0) Gecko/20100101 Firefox/155.0"
+  },
+  {
+    browser: "firefox", platform: "Linux", mobile: false,
+    version: "155.0", ua:
+    "Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0"
+  },
+
+  // ===== Firefox 154 (stable, Aug 2026) =====
+  {
+    browser: "firefox", platform: "Windows", mobile: false,
+    version: "154.0", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0"
+  },
+  {
+    browser: "firefox", platform: "macOS", mobile: false,
+    version: "154.0", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:154.0) Gecko/20100101 Firefox/154.0"
+  },
+  {
+    browser: "firefox", platform: "Linux", mobile: false,
+    version: "154.0", ua:
+    "Mozilla/5.0 (X11; Linux x86_64; rv:154.0) Gecko/20100101 Firefox/154.0"
+  },
+
+  // ===== Firefox 153 (stable, Aug 2026) =====
+  {
+    browser: "firefox", platform: "Windows", mobile: false,
+    version: "153.0", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0"
+  },
+  {
+    browser: "firefox", platform: "macOS", mobile: false,
+    version: "153.0", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:153.0) Gecko/20100101 Firefox/153.0"
+  },
+  {
+    browser: "firefox", platform: "Linux", mobile: false,
+    version: "153.0", ua:
+    "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0"
+  },
+
+  // ===== Safari 27.0 (macOS, Sep 2026) =====
   {
     browser: "safari", platform: "macOS", mobile: false,
     version: "27.0", ua:
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15"
   },
-  // ----- Safari 26.6 (macOS, Jul 2026) -----
+
+  // ===== Safari 26.6 (macOS, Jul 2026) =====
   {
     browser: "safari", platform: "macOS", mobile: false,
     version: "26.6", ua:
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15"
   },
-  // ----- Microsoft Edge 156 (stable, Oct 2026) -----
+
+  // ===== Safari 26.5 (macOS, May 2026) =====
+  {
+    browser: "safari", platform: "macOS", mobile: false,
+    version: "26.5", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15"
+  },
+
+  // ===== Safari 26.4 (macOS, Mar 2026) =====
+  {
+    browser: "safari", platform: "macOS", mobile: false,
+    version: "26.4", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15"
+  },
+
+  // ===== Safari 26.3 (macOS, Feb 2026) =====
+  {
+    browser: "safari", platform: "macOS", mobile: false,
+    version: "26.3", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
+  },
+
+  // ===== Microsoft Edge 156 (stable, Oct 2026) =====
   {
     browser: "edge", platform: "Windows", mobile: false,
     version: "156.0.4314.42", ua:
@@ -166,7 +356,8 @@ const PROFILES = [
     version: "156.0.4314.42", ua:
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42"
   },
-  // ----- Microsoft Edge 155 (stable, Oct 2026) -----
+
+  // ===== Microsoft Edge 155 (stable, Oct 2026) =====
   {
     browser: "edge", platform: "Windows", mobile: false,
     version: "155.0.4283.62", ua:
@@ -181,6 +372,91 @@ const PROFILES = [
     browser: "edge", platform: "Linux", mobile: false,
     version: "155.0.4283.62", ua:
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62"
+  },
+
+  // ===== Microsoft Edge 154 (stable, Sep 2026) =====
+  {
+    browser: "edge", platform: "Windows", mobile: false,
+    version: "154.0.4258.62", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62"
+  },
+  {
+    browser: "edge", platform: "macOS", mobile: false,
+    version: "154.0.4258.62", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62"
+  },
+  {
+    browser: "edge", platform: "Linux", mobile: false,
+    version: "154.0.4258.62", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62"
+  },
+
+  // ===== Microsoft Edge 153 (stable, Sep 2026) =====
+  {
+    browser: "edge", platform: "Windows", mobile: false,
+    version: "153.0.4234.48", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48"
+  },
+  {
+    browser: "edge", platform: "macOS", mobile: false,
+    version: "153.0.4234.48", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48"
+  },
+  {
+    browser: "edge", platform: "Linux", mobile: false,
+    version: "153.0.4234.48", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48"
+  },
+
+  // ===== Microsoft Edge 152 (stable, Sep 2026) =====
+  {
+    browser: "edge", platform: "Windows", mobile: false,
+    version: "152.0.4191.66", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66"
+  },
+  {
+    browser: "edge", platform: "macOS", mobile: false,
+    version: "152.0.4191.66", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66"
+  },
+  {
+    browser: "edge", platform: "Linux", mobile: false,
+    version: "152.0.4191.66", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66"
+  },
+
+  // ===== Microsoft Edge 151 (stable, Aug 2026) =====
+  {
+    browser: "edge", platform: "Windows", mobile: false,
+    version: "151.0.4129.107", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.107"
+  },
+  {
+    browser: "edge", platform: "macOS", mobile: false,
+    version: "151.0.4129.107", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.107"
+  },
+  {
+    browser: "edge", platform: "Linux", mobile: false,
+    version: "151.0.4129.107", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.107"
+  },
+
+  // ===== Microsoft Edge 150 (stable, Jul 2026) =====
+  {
+    browser: "edge", platform: "Windows", mobile: false,
+    version: "150.0.4078.105", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105"
+  },
+  {
+    browser: "edge", platform: "macOS", mobile: false,
+    version: "150.0.4078.105", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105"
+  },
+  {
+    browser: "edge", platform: "Linux", mobile: false,
+    version: "150.0.4078.105", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105"
   }
 ];
 
