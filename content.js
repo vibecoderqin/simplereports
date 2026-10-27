@@ -334,7 +334,17 @@
       `${bizPrefix}${n3}`, `${bizPrefix}${n4}`, `${bizPrefix}_${n3}`, `${bizPrefix}.${l}`, `${bizPrefix}_${l}`
     ];
 
-    return pick(variants);
+    // Минимальная длина локальной части email — 6 символов.
+    const MIN_LOCAL = 6;
+    const suitable = Array.from(
+      new Set(variants.filter((v) => v.length >= MIN_LOCAL))
+    );
+    if (suitable.length > 0) return pick(suitable);
+
+    // Страховка (на практике не срабатывает) — добиваем цифрами до 6.
+    let out = pick(variants);
+    while (out.length < MIN_LOCAL) out += String(rand(0, 9));
+    return out;
   }
 
   function randomEmail() {
