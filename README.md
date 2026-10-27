@@ -2,7 +2,7 @@
 
 **An experimental Chrome extension for interacting with Twitch's reporting interface in incognito windows.**
 
-![Version](https://img.shields.io/badge/version-2.2.0-a970ff)
+![Version](https://img.shields.io/badge/version-2.3.0-a970ff)
 ![Manifest](https://img.shields.io/badge/manifest-v3-9147ff)
 ![Chrome](https://img.shields.io/badge/chrome-%E2%89%A5120-00c176)
 
