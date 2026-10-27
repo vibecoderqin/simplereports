@@ -965,58 +965,41 @@
     btn.click();
   }
 
-  async function humanTypeIntoElement(el, text) {
+  async function pasteIntoElement(el, text) {
     el.focus();
-    el.value = "";
-    el.dispatchEvent(new InputEvent("input", {
-      inputType: "deleteContentBackward",
-      bubbles: true
-    }));
 
-    const slow = text.length <= 200;
-    const minDelay = slow ? 50 : 20;
-    const maxDelay = slow ? 150 : 60;
+    const ok = await sleepInterruptible(rand(60, 140));
+    if (!ok) return;
 
-    for (const ch of text) {
-      if (!state.running) return;
+    try { el.setSelectionRange(0, el.value.length); } catch {}
 
-      el.dispatchEvent(new KeyboardEvent("keydown", {
-        key: ch, bubbles: true, cancelable: true
-      }));
-      el.dispatchEvent(new KeyboardEvent("keypress", {
-        key: ch, bubbles: true, cancelable: true
-      }));
+    let pasted = false;
+    try {
+      pasted = document.execCommand("insertText", false, text);
+    } catch {}
 
-      let inserted = false;
+    if (!pasted || el.value !== text) {
       try {
-        inserted = document.execCommand("insertText", false, ch);
-      } catch {}
-      if (!inserted) {
-        el.value += ch;
-        const len = el.value.length;
-        try { el.setSelectionRange(len, len); } catch {}
-        el.dispatchEvent(new InputEvent("input", {
-          data: ch,
-          inputType: "insertText",
-          bubbles: true,
-          cancelable: false
-        }));
+        const desc = Object.getOwnPropertyDescriptor(
+          Object.getPrototypeOf(el), "value"
+        );
+        if (desc && desc.set) desc.set.call(el, text);
+        else el.value = text;
+      } catch {
+        el.value = text;
       }
-
-      el.dispatchEvent(new KeyboardEvent("keyup", {
-        key: ch, bubbles: true, cancelable: true
+      try { el.setSelectionRange(text.length, text.length); } catch {}
+      el.dispatchEvent(new InputEvent("input", {
+        data: text,
+        inputType: "insertFromPaste",
+        bubbles: true,
+        cancelable: false
       }));
-
-      const ok = await sleepInterruptible(rand(minDelay, maxDelay));
-      if (!ok) return;
-
-      if (Math.random() < 0.05) {
-        const ok2 = await sleepInterruptible(rand(300, 700));
-        if (!ok2) return;
-      }
     }
 
     el.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await sleepInterruptible(rand(120, 260));
   }
 
   async function fillDescription(text) {
@@ -1028,7 +1011,7 @@
       wizard.querySelector("textarea#report-wizard-description-form") ||
       wizard.querySelector("textarea");
     if (!ta) return;
-    await humanTypeIntoElement(ta, text);
+    await pasteIntoElement(ta, text);
   }
 
   async function checkVerify() {
@@ -1053,7 +1036,7 @@
       wizard.querySelector('input[data-a-target="tw-input"]');
     if (!input) throw new Error("email input not found");
     const value = randomEmail();
-    await humanTypeIntoElement(input, value);
+    await pasteIntoElement(input, value);
     await recordEmail(
       value,
       state.targetChannel,
