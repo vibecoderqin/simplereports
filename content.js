@@ -334,14 +334,12 @@
       `${bizPrefix}${n3}`, `${bizPrefix}${n4}`, `${bizPrefix}_${n3}`, `${bizPrefix}.${l}`, `${bizPrefix}_${l}`
     ];
 
-    // Минимальная длина локальной части email — 6 символов.
     const MIN_LOCAL = 6;
     const suitable = Array.from(
       new Set(variants.filter((v) => v.length >= MIN_LOCAL))
     );
     if (suitable.length > 0) return pick(suitable);
 
-    // Страховка (на практике не срабатывает) — добиваем цифрами до 6.
     let out = pick(variants);
     while (out.length < MIN_LOCAL) out += String(rand(0, 9));
     return out;
@@ -967,6 +965,60 @@
     btn.click();
   }
 
+  async function humanTypeIntoElement(el, text) {
+    el.focus();
+    el.value = "";
+    el.dispatchEvent(new InputEvent("input", {
+      inputType: "deleteContentBackward",
+      bubbles: true
+    }));
+
+    const slow = text.length <= 200;
+    const minDelay = slow ? 50 : 20;
+    const maxDelay = slow ? 150 : 60;
+
+    for (const ch of text) {
+      if (!state.running) return;
+
+      el.dispatchEvent(new KeyboardEvent("keydown", {
+        key: ch, bubbles: true, cancelable: true
+      }));
+      el.dispatchEvent(new KeyboardEvent("keypress", {
+        key: ch, bubbles: true, cancelable: true
+      }));
+
+      let inserted = false;
+      try {
+        inserted = document.execCommand("insertText", false, ch);
+      } catch {}
+      if (!inserted) {
+        el.value += ch;
+        const len = el.value.length;
+        try { el.setSelectionRange(len, len); } catch {}
+        el.dispatchEvent(new InputEvent("input", {
+          data: ch,
+          inputType: "insertText",
+          bubbles: true,
+          cancelable: false
+        }));
+      }
+
+      el.dispatchEvent(new KeyboardEvent("keyup", {
+        key: ch, bubbles: true, cancelable: true
+      }));
+
+      const ok = await sleepInterruptible(rand(minDelay, maxDelay));
+      if (!ok) return;
+
+      if (Math.random() < 0.05) {
+        const ok2 = await sleepInterruptible(rand(300, 700));
+        if (!ok2) return;
+      }
+    }
+
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
   async function fillDescription(text) {
     if (!text) return;
     const wizard = getWizard();
@@ -976,10 +1028,7 @@
       wizard.querySelector("textarea#report-wizard-description-form") ||
       wizard.querySelector("textarea");
     if (!ta) return;
-    ta.focus();
-    ta.value = text;
-    ta.dispatchEvent(new Event("input", { bubbles: true }));
-    ta.dispatchEvent(new Event("change", { bubbles: true }));
+    await humanTypeIntoElement(ta, text);
   }
 
   async function checkVerify() {
@@ -1004,10 +1053,7 @@
       wizard.querySelector('input[data-a-target="tw-input"]');
     if (!input) throw new Error("email input not found");
     const value = randomEmail();
-    input.focus();
-    input.value = value;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    await humanTypeIntoElement(input, value);
     await recordEmail(
       value,
       state.targetChannel,
@@ -1092,7 +1138,7 @@
   async function rotateUA() {
     return new Promise((resolve) => {
       try {
-        chrome.runtime.sendMessage({ type: "ROTATE_UA" }, (resp) => {
+        chrome.runtime.sendMessage({ type: "ROTATE_UA", origin: location.origin }, (resp) => {
           if (chrome.runtime.lastError) return resolve(null);
           if (resp && resp.ok && resp.ua) {
             state.progress.lastUA = resp.ua;

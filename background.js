@@ -1,810 +1,1031 @@
-const INCOGNITO_ONLY = true;
-const RULE_ID_MAIN = 9001;
-const RULE_ID_DEFAULT = 9010;
-const LEGACY_IDS   = [9001, 9002, 9003, 9004, 9005];
-const SETTINGS_KEY = "tsr_settings_v1";
-const RATE_KEY     = "tsr_rate_v2";
-const PROGRESS_KEY = "tsr_progress_v1";
-const EMAILS_KEY   = "tsr_emails_v1";
-const RESUME_KEY   = "tsr_resume_v1";
-const PROFILE_KEY  = "tsr_profile_v1";
-const ROT_KEY      = "tsr_last_rotate_v1";
-const CAPACITY     = 3;
-const WINDOW_MS    = 3600000;
-const REFILL_MS    = WINDOW_MS / CAPACITY;
-const ROT_MIN_MS   = 30 * 60 * 1000;
-const ROT_PROB     = 0.15;
+(() => {
+  "use strict";
 
-const SPOOF_DOMAINS = [
-  "twitch.tv",
-  "jtvnw.net",
-  "ttvnw.net",
-  "twitchcdn.net",
-  "live-video.net"
-];
+  const LS_KEY = "__tsr_profile_v1";
+  const CFG = { profile: null };
+  let uaDataCache = new WeakMap();
 
-const LANG_POOL = [
-  { code: "en-US", tag: "en-US,en;q=0.9",            list: ["en-US", "en"],             tz: "America/New_York" },
-  { code: "en-GB", tag: "en-GB,en;q=0.9",            list: ["en-GB", "en"],             tz: "Europe/London" },
-  { code: "de-DE", tag: "de-DE,de;q=0.9,en;q=0.8",   list: ["de-DE", "de", "en"],       tz: "Europe/Berlin" },
-  { code: "fr-FR", tag: "fr-FR,fr;q=0.9,en;q=0.8",   list: ["fr-FR", "fr", "en"],       tz: "Europe/Paris" },
-  { code: "es-ES", tag: "es-ES,es;q=0.9,en;q=0.8",   list: ["es-ES", "es", "en"],       tz: "Europe/Madrid" }
-];
-
-function isIncognitoContext() {
-  try { return chrome.extension.inIncognitoContext === true; } catch { return false; }
-}
-function isIncognitoSender(sender) {
-  return sender?.tab?.incognito === true || isIncognitoContext();
-}
-
-const PROFILES = [
-  { browser: "chrome", platform: "Windows", mobile: false,
-    version: "156.0.8078.47",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
-  { browser: "chrome", platform: "Windows", mobile: false,
-    version: "156.0.8078.48",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.48 Safari/537.36" },
-  { browser: "chrome", platform: "macOS", mobile: false,
-    version: "156.0.8078.47",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
-  { browser: "chrome", platform: "Linux", mobile: false,
-    version: "156.0.8078.47",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
-  { browser: "chrome", platform: "Windows", mobile: false,
-    version: "155.0.8059.84",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
-  { browser: "chrome", platform: "Windows", mobile: false,
-    version: "155.0.8059.85",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.85 Safari/537.36" },
-  { browser: "chrome", platform: "macOS", mobile: false,
-    version: "155.0.8059.84",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
-  { browser: "chrome", platform: "Linux", mobile: false,
-    version: "155.0.8059.84",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
-  { browser: "chrome", platform: "Windows", mobile: false,
-    version: "154.0.8037.92",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
-  { browser: "chrome", platform: "Windows", mobile: false,
-    version: "154.0.8037.93",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.93 Safari/537.36" },
-  { browser: "chrome", platform: "macOS", mobile: false,
-    version: "154.0.8037.92",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
-  { browser: "chrome", platform: "Linux", mobile: false,
-    version: "154.0.8037.92",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
-  { browser: "chrome", platform: "Windows", mobile: false,
-    version: "150.0.7742.92",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
-  { browser: "chrome", platform: "macOS", mobile: false,
-    version: "150.0.7742.92",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
-  { browser: "chrome", platform: "Linux", mobile: false,
-    version: "150.0.7742.92",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
-  { browser: "brave", platform: "Windows", mobile: false,
-    version: "156.0.8078.47",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
-  { browser: "brave", platform: "macOS", mobile: false,
-    version: "156.0.8078.47",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
-  { browser: "brave", platform: "Linux", mobile: false,
-    version: "156.0.8078.47",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
-  { browser: "brave", platform: "Windows", mobile: false,
-    version: "155.0.8059.84",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
-  { browser: "brave", platform: "macOS", mobile: false,
-    version: "155.0.8059.84",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
-  { browser: "brave", platform: "Linux", mobile: false,
-    version: "155.0.8059.84",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
-  { browser: "brave", platform: "Windows", mobile: false,
-    version: "154.0.8037.92",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
-  { browser: "brave", platform: "macOS", mobile: false,
-    version: "154.0.8037.92",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
-  { browser: "brave", platform: "Linux", mobile: false,
-    version: "154.0.8037.92",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
-  { browser: "brave", platform: "Windows", mobile: false,
-    version: "150.0.7742.92",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
-  { browser: "brave", platform: "macOS", mobile: false,
-    version: "150.0.7742.92",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
-  { browser: "brave", platform: "Linux", mobile: false,
-    version: "150.0.7742.92",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
-  { browser: "firefox", platform: "Windows", mobile: false,
-    version: "158.0",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0" },
-  { browser: "firefox", platform: "macOS", mobile: false,
-    version: "158.0",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:158.0) Gecko/20100101 Firefox/158.0" },
-  { browser: "firefox", platform: "Linux", mobile: false,
-    version: "158.0",
-    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0" },
-  { browser: "firefox", platform: "Windows", mobile: false,
-    version: "157.0",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:157.0) Gecko/20100101 Firefox/157.0" },
-  { browser: "firefox", platform: "macOS", mobile: false,
-    version: "157.0",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:157.0) Gecko/20100101 Firefox/157.0" },
-  { browser: "firefox", platform: "Linux", mobile: false,
-    version: "157.0",
-    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0" },
-  { browser: "firefox", platform: "Windows", mobile: false,
-    version: "156.0",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) Gecko/20100101 Firefox/156.0" },
-  { browser: "firefox", platform: "macOS", mobile: false,
-    version: "156.0",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:156.0) Gecko/20100101 Firefox/156.0" },
-  { browser: "firefox", platform: "Linux", mobile: false,
-    version: "156.0",
-    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0" },
-  { browser: "firefox", platform: "Windows", mobile: false,
-    version: "155.0",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0" },
-  { browser: "firefox", platform: "macOS", mobile: false,
-    version: "155.0",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:155.0) Gecko/20100101 Firefox/155.0" },
-  { browser: "firefox", platform: "Linux", mobile: false,
-    version: "155.0",
-    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0" },
-  { browser: "firefox", platform: "Windows", mobile: false,
-    version: "154.0",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0" },
-  { browser: "firefox", platform: "macOS", mobile: false,
-    version: "154.0",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:154.0) Gecko/20100101 Firefox/154.0" },
-  { browser: "firefox", platform: "Linux", mobile: false,
-    version: "154.0",
-    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:154.0) Gecko/20100101 Firefox/154.0" },
-  { browser: "firefox", platform: "Windows", mobile: false,
-    version: "153.0",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0" },
-  { browser: "firefox", platform: "macOS", mobile: false,
-    version: "153.0",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:153.0) Gecko/20100101 Firefox/153.0" },
-  { browser: "firefox", platform: "Linux", mobile: false,
-    version: "153.0",
-    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0" },
-  { browser: "safari", platform: "macOS", mobile: false,
-    version: "27.0",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15" },
-  { browser: "safari", platform: "macOS", mobile: false,
-    version: "26.6",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15" },
-  { browser: "safari", platform: "macOS", mobile: false,
-    version: "26.5",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15" },
-  { browser: "safari", platform: "macOS", mobile: false,
-    version: "26.4",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15" },
-  { browser: "safari", platform: "macOS", mobile: false,
-    version: "26.3",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15" },
-  { browser: "edge", platform: "Windows", mobile: false,
-    version: "156.0.4314.42",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42" },
-  { browser: "edge", platform: "macOS", mobile: false,
-    version: "156.0.4314.42",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42" },
-  { browser: "edge", platform: "Linux", mobile: false,
-    version: "156.0.4314.42",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42" },
-  { browser: "edge", platform: "Windows", mobile: false,
-    version: "155.0.4283.62",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62" },
-  { browser: "edge", platform: "macOS", mobile: false,
-    version: "155.0.4283.62",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62" },
-  { browser: "edge", platform: "Linux", mobile: false,
-    version: "155.0.4283.62",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62" },
-  { browser: "edge", platform: "Windows", mobile: false,
-    version: "154.0.4258.62",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62" },
-  { browser: "edge", platform: "macOS", mobile: false,
-    version: "154.0.4258.62",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62" },
-  { browser: "edge", platform: "Linux", mobile: false,
-    version: "154.0.4258.62",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62" },
-  { browser: "edge", platform: "Windows", mobile: false,
-    version: "153.0.4234.48",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48" },
-  { browser: "edge", platform: "macOS", mobile: false,
-    version: "153.0.4234.48",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48" },
-  { browser: "edge", platform: "Linux", mobile: false,
-    version: "153.0.4234.48",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48" },
-  { browser: "edge", platform: "Windows", mobile: false,
-    version: "152.0.4191.66",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66" },
-  { browser: "edge", platform: "macOS", mobile: false,
-    version: "152.0.4191.66",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66" },
-  { browser: "edge", platform: "Linux", mobile: false,
-    version: "152.0.4191.66",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66" },
-  { browser: "edge", platform: "Windows", mobile: false,
-    version: "150.0.4078.105",
-    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105" },
-  { browser: "edge", platform: "macOS", mobile: false,
-    version: "150.0.4078.105",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105" },
-  { browser: "edge", platform: "Linux", mobile: false,
-    version: "150.0.4078.105",
-    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105" }
-];
-
-function randomSalt() {
-  const arr = new Uint32Array(1);
-  crypto.getRandomValues(arr);
-  return arr[0];
-}
-
-function reduceUA(ua, major) {
-  return ua
-    .replace(/Chrome\/[\d.]+/, `Chrome/${major}.0.0.0`)
-    .replace(/Edg\/[\d.]+/, `Edg/${major}.0.0.0`);
-}
-
-function enrichProfile(p) {
-  const major = String(p.version).split(".")[0];
-  const platformName =
-    p.platform === "Windows" ? "Win32" :
-    p.platform === "macOS"   ? "MacIntel" :
-    p.platform === "Linux"   ? "Linux x86_64" : "Win32";
-  const vendor =
-    p.browser === "chrome" ? "Google Inc." :
-    p.browser === "edge"   ? "Microsoft Corporation" :
-    p.browser === "brave"  ? "Google Inc." :
-    p.browser === "safari" ? "Apple Computer, Inc." : "";
-  const lang = LANG_POOL[(Math.random() * LANG_POOL.length) | 0];
-  const hardwareConcurrency =
-    p.platform === "Windows" ? 8 :
-    p.platform === "macOS"   ? 10 :
-    p.platform === "Linux"   ? 4 : 8;
-  const deviceMemory =
-    p.platform === "Windows" ? 8 :
-    p.platform === "macOS"   ? 16 :
-    p.platform === "Linux"   ? 4 : 8;
-
-  const platformVersion =
-    p.platform === "Windows" ? "10.0.0" :
-    p.platform === "macOS"   ? "15.8.0" :
-    p.platform === "Linux"   ? "6.5.0" : "10.0.0";
-
-  const screenInfo =
-    p.platform === "Windows" ? { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, pixelRatio: 1 } :
-    p.platform === "macOS"   ? { width: 1440, height: 900, availWidth: 1440, availHeight: 875, colorDepth: 30, pixelRatio: 2 } :
-    p.platform === "Linux"   ? { width: 1920, height: 1080, availWidth: 1920, availHeight: 1055, colorDepth: 24, pixelRatio: 1 } :
-                               { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, pixelRatio: 1 };
-
-  const reduced = (p.browser === "chrome" || p.browser === "edge" || p.browser === "brave")
-    ? reduceUA(p.ua, major)
-    : p.ua;
-
-  const out = {
-    browser: p.browser,
-    platform: p.platform,
-    mobile: !!p.mobile,
-    version: p.version,
-    major,
-    ua: reduced,
-    appVersion: reduced.replace(/^Mozilla\//, ""),
-    platformName,
-    vendor,
-    languages: lang.list.slice(),
-    acceptLanguage: lang.tag,
-    timezone: lang.tz,
-    hardwareConcurrency,
-    deviceMemory,
-    platformVersion,
-    screen: screenInfo,
-    salt: randomSalt()
-  };
-
-  if (p.browser === "chrome" || p.browser === "edge" || p.browser === "brave") {
-    let brandName;
-    if (p.browser === "edge") brandName = "Microsoft Edge";
-    else if (p.browser === "brave") brandName = "Brave";
-    else brandName = "Google Chrome";
-
-    out.uaBrands = [
-      { brand: "Chromium",      version: major },
-      { brand: "Not(A:Brand",   version: "24" },
-      { brand: brandName,       version: major }
-    ];
-    out.fullVersionList = [
-      { brand: "Chromium",      version: p.version },
-      { brand: "Not(A:Brand",   version: "24.0.0.0" },
-      { brand: brandName,       version: p.version }
-    ];
-  }
-  if (p.browser === "firefox") {
-    out.oscpu =
-      p.platform === "Windows" ? "Windows NT 10.0; Win64; x64" :
-      p.platform === "macOS"   ? "Intel Mac OS X 15.8" : "Linux x86_64";
-  }
-  if (p.browser === "safari") {
-    out.uaBrands = [];
-    out.fullVersionList = [];
-  }
-  return out;
-}
-
-let lastUa = null;
-async function pickProfile() {
-  if (!lastUa) {
-    try {
-      const d = await chrome.storage.session.get(PROFILE_KEY);
-      lastUa = d[PROFILE_KEY]?.ua || null;
-    } catch {}
-  }
-  const pool = lastUa ? PROFILES.filter(p => p.ua !== lastUa) : PROFILES;
-  const raw = pool[(Math.random() * pool.length) | 0];
-  lastUa = raw.ua;
-  return enrichProfile(raw);
-}
-
-function buildSecChUa(browser, major, grease) {
-  if (browser === "edge") {
-    return `"Microsoft Edge";v="${major}", "Chromium";v="${major}", "Not(A:Brand";v="${grease}"`;
-  }
-  if (browser === "brave") {
-    return `"Chromium";v="${major}", "Brave";v="${major}", "Not(A:Brand";v="${grease}"`;
-  }
-  return `"Chromium";v="${major}", "Not(A:Brand";v="${grease}", "Google Chrome";v="${major}"`;
-}
-
-function buildFullVersionList(browser, fullVersion, grease) {
-  if (browser === "edge") {
-    return `"Microsoft Edge";v="${fullVersion}", "Chromium";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0"`;
-  }
-  if (browser === "brave") {
-    return `"Chromium";v="${fullVersion}", "Brave";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0"`;
-  }
-  return `"Chromium";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0", "Google Chrome";v="${fullVersion}"`;
-}
-
-function buildRequestHeaders(profile) {
-  const headers = [
-    { header: "user-agent", operation: "set", value: profile.ua },
-    { header: "accept-language", operation: "set", value: profile.acceptLanguage }
-  ];
-
-  if (profile.browser === "chrome" || profile.browser === "edge" || profile.browser === "brave") {
-    const v = profile.version, m = profile.major, g = 24;
-    headers.push(
-      { header: "sec-ch-ua",                   operation: "set", value: buildSecChUa(profile.browser, m, g) },
-      { header: "sec-ch-ua-mobile",            operation: "set", value: profile.mobile ? "?1" : "?0" },
-      { header: "sec-ch-ua-platform",          operation: "set", value: `"${profile.platform}"` },
-      { header: "sec-ch-ua-full-version-list", operation: "set", value: buildFullVersionList(profile.browser, v, g) }
-    );
-  } else {
-    headers.push(
-      { header: "sec-ch-ua",                   operation: "remove" },
-      { header: "sec-ch-ua-mobile",            operation: "remove" },
-      { header: "sec-ch-ua-platform",          operation: "remove" },
-      { header: "sec-ch-ua-full-version-list", operation: "remove" }
-    );
-  }
-
-  if (profile.browser === "safari") {
-    headers.push(
-      { header: "sec-fetch-site", operation: "remove" },
-      { header: "sec-fetch-mode", operation: "remove" },
-      { header: "sec-fetch-user", operation: "remove" },
-      { header: "sec-fetch-dest", operation: "remove" }
-    );
-  }
-
-  return headers;
-}
-
-async function syncProfileToTab(tabId, profile) {
-  if (typeof tabId !== "number") return;
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId, allFrames: true },
-      world: "MAIN",
-      args: [profile],
-      func: (p) => {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) CFG.profile = JSON.parse(raw);
+  } catch {}
+
+  function broadcastToIframes() {
+    if (!CFG.profile) return;
+    try {
+      const frames = document.querySelectorAll("iframe");
+      for (const f of frames) {
         try {
-          if (p) {
-            localStorage.setItem("__tsr_profile_v1", JSON.stringify(p));
-            window.postMessage({ __tsr: 1, type: "CONFIG", profile: p }, "*");
-          } else {
-            localStorage.removeItem("__tsr_profile_v1");
-            window.postMessage({ __tsr: 1, type: "CONFIG", profile: null }, "*");
-          }
+          f.contentWindow.postMessage({ __tsr: 1, type: "CONFIG", profile: CFG.profile }, "*");
         } catch {}
       }
-    });
-  } catch (e) {}
-  try {
-    chrome.tabs.sendMessage(tabId, { type: "PROFILE_UPDATED", profile }).catch(() => {});
-  } catch {}
-}
+    } catch {}
+  }
 
-async function applyProfile(profile) {
-  const headers = buildRequestHeaders(profile);
-
-  const rules = [
-    {
-      id: RULE_ID_MAIN,
-      priority: 1,
-      action: { type: "modifyHeaders", requestHeaders: headers },
-      condition: {
-        requestDomains: SPOOF_DOMAINS.slice()
-      }
+  window.addEventListener("message", (ev) => {
+    if (ev.source !== window) return;
+    const d = ev.data;
+    if (!d || d.__tsr !== 1) return;
+    if (d.type === "CONFIG") {
+      CFG.profile = d.profile || null;
+      uaDataCache = new WeakMap();
+      if (CFG.profile) broadcastToIframes();
     }
-  ];
+  }, true);
 
-  await chrome.declarativeNetRequest.updateSessionRules({
-    removeRuleIds: [RULE_ID_MAIN, RULE_ID_DEFAULT].concat(LEGACY_IDS),
-    addRules: rules
+  window.addEventListener("storage", (e) => {
+    if (e.key !== LS_KEY) return;
+    try {
+      CFG.profile = e.newValue ? JSON.parse(e.newValue) : null;
+    } catch { CFG.profile = null; }
+    uaDataCache = new WeakMap();
+    if (CFG.profile) broadcastToIframes();
   });
 
-  try { await chrome.storage.session.set({ [PROFILE_KEY]: profile }); } catch {}
+  const _toString = Function.prototype.toString;
+  const nativeLike = new WeakMap();
 
-  try {
-    const tabs = await chrome.tabs.query({});
-    await Promise.all(
-      tabs
-        .filter(t =>
-          t.incognito &&
-          typeof t.id === "number" &&
-          /^https?:\/\/([^/]+\.)?twitch\.tv\//.test(t.url || "")
-        )
-        .map(t => syncProfileToTab(t.id, profile))
-    );
-  } catch {}
-}
-
-async function clearRules() {
-  try {
-    await chrome.declarativeNetRequest.updateSessionRules({
-      removeRuleIds: [RULE_ID_MAIN, RULE_ID_DEFAULT].concat(LEGACY_IDS)
-    });
-  } catch {}
-  try { await chrome.storage.session.remove(PROFILE_KEY); } catch {}
-
-  try {
-    const tabs = await chrome.tabs.query({});
-    await Promise.all(
-      tabs
-        .filter(t =>
-          t.incognito &&
-          typeof t.id === "number" &&
-          /^https?:\/\/([^/]+\.)?twitch\.tv\//.test(t.url || "")
-        )
-        .map(t => syncProfileToTab(t.id, null))
-    );
-  } catch {}
-}
-
-async function resetLanguageToEnglish() {
-  try {
-    const rule = {
-      id: RULE_ID_DEFAULT,
-      priority: 1,
-      action: {
-        type: "modifyHeaders",
-        requestHeaders: [
-          { header: "accept-language", operation: "set", value: "en-US,en;q=0.9" }
-        ]
-      },
-      condition: { requestDomains: SPOOF_DOMAINS.slice() }
-    };
-    await chrome.declarativeNetRequest.updateSessionRules({
-      removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS),
-      addRules: [rule]
-    });
-  } catch { return; }
-
-  try { await chrome.storage.session.remove(PROFILE_KEY); } catch {}
-
-  try {
-    const tabs = await chrome.tabs.query({});
-    await Promise.all(
-      tabs
-        .filter(t =>
-          t.incognito &&
-          typeof t.id === "number" &&
-          /^https?:\/\/([^/]+\.)?twitch\.tv\//.test(t.url || "")
-        )
-        .map(t => syncProfileToTab(t.id, null))
-    );
-  } catch {}
-}
-
-async function migrateLegacyDynamicRules() {
-  try {
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: LEGACY_IDS });
-  } catch {}
-}
-
-async function acquireReportToken() {
-  const now = Date.now();
-  const stored = await chrome.storage.local.get(RATE_KEY);
-  const bucket = stored[RATE_KEY] || { tokens: CAPACITY, last: now };
-  const elapsed = now - bucket.last;
-  const intervals = Math.floor(elapsed / REFILL_MS);
-  if (intervals > 0) {
-    bucket.tokens = Math.min(CAPACITY, bucket.tokens + intervals);
-    bucket.last += intervals * REFILL_MS;
+  function markNative(fn, original) {
+    nativeLike.set(fn, original);
+    return fn;
   }
-  if (bucket.tokens < 1) {
-    const waitMs = REFILL_MS - (now - bucket.last);
-    return { ok: false, waitMs: Math.max(0, Math.ceil(waitMs)) };
-  }
-  bucket.tokens -= 1;
-  await chrome.storage.local.set({ [RATE_KEY]: bucket });
-  return { ok: true, remaining: bucket.tokens };
-}
 
-async function writeProgress(payload) { await chrome.storage.local.set({ [PROGRESS_KEY]: payload }); }
-async function appendEmail(record) {
-  const s = await chrome.storage.local.get(EMAILS_KEY);
-  const prev = s[EMAILS_KEY] || [];
-  await chrome.storage.local.set({ [EMAILS_KEY]: prev.concat(record).slice(-1000) });
-}
-async function readState() {
-  const data = await chrome.storage.local.get([
-    PROGRESS_KEY, EMAILS_KEY, RESUME_KEY, SETTINGS_KEY, RATE_KEY
-  ]);
-  let profile = null;
-  try {
-    const sess = await chrome.storage.session.get(PROFILE_KEY);
-    profile = sess[PROFILE_KEY] || null;
-  } catch {}
-  return { ...data, currentProfile: profile, rate: data[RATE_KEY] || null };
-}
-
-const FALLBACK_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-
-function notify(title, message) {
-  try {
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: FALLBACK_ICON,
-      title: title || "TS-Reporter",
-      message: message || ""
-    });
-  } catch {}
-}
-
-async function ensureSessionStorageAccess() {
-  try {
-    await chrome.storage.session.setAccessLevel({
-      accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS"
-    });
-  } catch {}
-}
-
-async function bootstrap() {
-  await migrateLegacyDynamicRules();
-
-  if (!isIncognitoContext()) {
+  function mimic(patched, nativeFn, name, length) {
     try {
-      await chrome.declarativeNetRequest.updateSessionRules({
-        removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS)
+      Object.defineProperty(patched, "name", { value: name, configurable: true });
+      Object.defineProperty(patched, "length", { value: length, configurable: true });
+    } catch {}
+    const realNative = nativeLike.get(nativeFn) || nativeFn;
+    return markNative(patched, realNative);
+  }
+
+  {
+    const patchedToString = function () {
+      const orig = nativeLike.get(this);
+      return orig ? _toString.call(orig) : _toString.call(this);
+    };
+    try {
+      Object.defineProperty(patchedToString, "name", { value: "toString", configurable: true });
+      Object.defineProperty(patchedToString, "length", { value: 0, configurable: true });
+    } catch {}
+    markNative(patchedToString, _toString);
+    Function.prototype.toString = patchedToString;
+  }
+
+  function safeDefine(obj, prop, descriptor) {
+    try { Reflect.defineProperty(obj, prop, descriptor); }
+    catch {}
+  }
+
+  function profileSalt() {
+    return CFG.profile && typeof CFG.profile.salt === "number" ? CFG.profile.salt : 0;
+  }
+
+  function masterSeed() {
+    return CFG.profile && typeof CFG.profile._masterSeed === "number"
+      ? CFG.profile._masterSeed
+      : profileSalt();
+  }
+
+  function originTag() {
+    return (CFG.profile && CFG.profile._origin) || "";
+  }
+
+  function hash32(str) {
+    let h = (0x811c9dc5 ^ masterSeed()) | 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
+
+  (function patchNavigator() {
+    if (typeof Navigator === "undefined" || !Navigator.prototype) return;
+    const NavProto = Navigator.prototype;
+
+    function redefine(name, wrap) {
+      const desc = Object.getOwnPropertyDescriptor(NavProto, name);
+      if (!desc || typeof desc.get !== "function") return;
+      const orig = desc.get;
+      const patched = wrap(orig);
+      mimic(patched, orig, "get " + name, 0);
+      safeDefine(NavProto, name, {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: patched
+      });
+    }
+
+    redefine("userAgent", (orig) => function () {
+      return CFG.profile ? CFG.profile.ua : orig.call(this);
+    });
+    redefine("appVersion", (orig) => function () {
+      return CFG.profile ? CFG.profile.appVersion : orig.call(this);
+    });
+    redefine("platform", (orig) => function () {
+      return CFG.profile ? CFG.profile.platformName : orig.call(this);
+    });
+    redefine("vendor", (orig) => function () {
+      return CFG.profile ? CFG.profile.vendor : orig.call(this);
+    });
+    redefine("language", (orig) => function () {
+      const langs = CFG.profile && CFG.profile.languages;
+      return langs && langs.length ? langs[0] : orig.call(this);
+    });
+    redefine("languages", (orig) => function () {
+      const langs = CFG.profile && CFG.profile.languages;
+      return langs && langs.length ? Object.freeze(langs.slice()) : orig.call(this);
+    });
+    redefine("hardwareConcurrency", (orig) => function () {
+      return CFG.profile && CFG.profile.hardwareConcurrency
+        ? CFG.profile.hardwareConcurrency
+        : orig.call(this);
+    });
+    redefine("deviceMemory", (orig) => function () {
+      return CFG.profile && CFG.profile.deviceMemory
+        ? CFG.profile.deviceMemory
+        : orig.call(this);
+    });
+    redefine("maxTouchPoints", (orig) => function () {
+      return CFG.profile ? 0 : orig.call(this);
+    });
+
+    (function patchConnection() {
+      const desc = Object.getOwnPropertyDescriptor(NavProto, "connection");
+      if (!desc) return;
+
+      const NativeNC = window.NetworkInformation;
+      let cachedConn = null;
+
+      function getFakeConnection() {
+        if (cachedConn) return cachedConn;
+        let obj;
+        if (NativeNC && NativeNC.prototype) {
+          try { obj = Object.create(NativeNC.prototype); } catch { obj = {}; }
+        } else {
+          obj = {};
+        }
+        safeDefine(obj, "effectiveType", { value: "4g",    configurable: true, enumerable: true });
+        safeDefine(obj, "rtt",           { value: 50,      configurable: true, enumerable: true });
+        safeDefine(obj, "downlink",      { value: 10,      configurable: true, enumerable: true });
+        safeDefine(obj, "saveData",      { value: false,   configurable: true, enumerable: true });
+        safeDefine(obj, "type",          { value: "wifi",  configurable: true, enumerable: true });
+        safeDefine(obj, "onchange",      { value: null,    configurable: true, writable: true, enumerable: true });
+        cachedConn = obj;
+        return cachedConn;
+      }
+
+      redefine("connection", (origFn) => function () {
+        if (!CFG.profile) return origFn.call(this);
+        const b = CFG.profile.browser;
+        if (b === "firefox" || b === "safari") return undefined;
+        return getFakeConnection();
+      });
+    })();
+
+    const uaDesc = Object.getOwnPropertyDescriptor(NavProto, "userAgentData");
+    if (uaDesc && typeof uaDesc.get === "function") {
+      const origGet = uaDesc.get;
+      const patched = mimic(function () {
+        if (!CFG.profile) return origGet.call(this);
+        if (CFG.profile.browser !== "chrome" &&
+            CFG.profile.browser !== "edge" &&
+            CFG.profile.browser !== "brave") return undefined;
+        let cached = uaDataCache.get(CFG.profile);
+        if (!cached) {
+          cached = new FakeNavigatorUAData(CFG.profile);
+          uaDataCache.set(CFG.profile, cached);
+        }
+        return cached;
+      }, origGet, "get userAgentData", 0);
+      safeDefine(NavProto, "userAgentData", {
+        configurable: true,
+        enumerable: true,
+        get: patched
+      });
+    }
+  })();
+
+  const NativeUAData = typeof window !== "undefined" ? window.NavigatorUAData : undefined;
+
+  function FakeNavigatorUAData(profile) {
+    this._profile = profile;
+    const brands = ((profile && profile.uaBrands) || []).map(b =>
+      Object.freeze({ brand: b.brand, version: String(b.version) })
+    );
+    Object.defineProperty(this, "_brands", {
+      value: Object.freeze(brands),
+      configurable: true
+    });
+  }
+
+  if (NativeUAData && NativeUAData.prototype) {
+    try { Object.setPrototypeOf(FakeNavigatorUAData.prototype, NativeUAData.prototype); } catch {}
+  }
+
+  Object.defineProperty(FakeNavigatorUAData.prototype, "brands", {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._brands; }
+  });
+  Object.defineProperty(FakeNavigatorUAData.prototype, "mobile", {
+    configurable: true,
+    enumerable: true,
+    get: function () { return !!(this._profile && this._profile.mobile); }
+  });
+  Object.defineProperty(FakeNavigatorUAData.prototype, "platform", {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._profile ? this._profile.platform : ""; }
+  });
+  Object.defineProperty(FakeNavigatorUAData.prototype, "getHighEntropyValues", {
+    configurable: true,
+    writable: true,
+    value: function (hints) {
+      const p = this._profile || {};
+      const want = new Set(Array.isArray(hints) ? hints : []);
+      const out = {
+        brands: this.brands,
+        mobile: this.mobile,
+        platform: this.platform
+      };
+      if (want.has("architecture")) out.architecture = "x86";
+      if (want.has("bitness")) out.bitness = "64";
+      if (want.has("formFactors")) out.formFactors = ["Desktop"];
+      if (want.has("model")) out.model = "";
+      if (want.has("platformVersion")) out.platformVersion = p.platformVersion || "10.0.0";
+      if (want.has("uaFullVersion")) out.uaFullVersion = p.version;
+      if (want.has("wow64")) out.wow64 = false;
+      if (want.has("fullVersionList")) {
+        out.fullVersionList = Object.freeze(
+          (p.fullVersionList || []).map(b =>
+            Object.freeze({ brand: b.brand, version: String(b.version) })
+          )
+        );
+      }
+      return Promise.resolve(out);
+    }
+  });
+  Object.defineProperty(FakeNavigatorUAData.prototype, "toJSON", {
+    configurable: true,
+    writable: true,
+    value: function () {
+      return { brands: this.brands, mobile: this.mobile, platform: this.platform };
+    }
+  });
+
+  if (NativeUAData && NativeUAData.prototype) {
+    const origHEV = NativeUAData.prototype.getHighEntropyValues;
+    const origJSON = NativeUAData.prototype.toJSON;
+    if (typeof origHEV === "function") {
+      markNative(FakeNavigatorUAData.prototype.getHighEntropyValues, origHEV);
+    }
+    if (typeof origJSON === "function") {
+      markNative(FakeNavigatorUAData.prototype.toJSON, origJSON);
+    }
+    try {
+      Object.defineProperty(FakeNavigatorUAData, "name", { value: "NavigatorUAData", configurable: true });
+      Object.defineProperty(FakeNavigatorUAData.prototype, "constructor", {
+        value: NativeUAData, configurable: true, writable: true
       });
     } catch {}
-    return;
   }
 
-  await ensureSessionStorageAccess();
-  try {
-    const existing = await chrome.declarativeNetRequest.getSessionRules();
-    const has = existing.some(r => r.id === RULE_ID_MAIN);
-    if (has) return;
-    const profile = await pickProfile();
-    await applyProfile(profile);
-  } catch {}
-}
+  (function patchBrave() {
+    if (typeof Navigator === "undefined" || !Navigator.prototype) return;
+    const NavProto = Navigator.prototype;
 
-chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
-  if (!tab?.incognito) return;
-  if (info.status !== "complete") return;
-  const url = tab.url || "";
-  if (!/^https?:\/\/([^/]+\.)?twitch\.tv\//.test(url)) return;
+    const origDesc = Object.getOwnPropertyDescriptor(NavProto, "brave");
+    const origGet = origDesc && typeof origDesc.get === "function" ? origDesc.get : null;
 
-  try {
-    const sess = await chrome.storage.session.get(PROFILE_KEY);
-    if (sess[PROFILE_KEY]) {
-      await syncProfileToTab(tabId, sess[PROFILE_KEY]);
-    }
-  } catch {}
+    function BraveSpoof() {}
+    BraveSpoof.prototype.isBrave = function () {
+      return Promise.resolve(true);
+    };
 
-  try {
-    const s = await chrome.storage.local.get(ROT_KEY);
-    const last = s[ROT_KEY] || 0;
-    if (Date.now() - last < ROT_MIN_MS) return;
-    if (Math.random() > ROT_PROB) return;
-    const profile = await pickProfile();
-    await applyProfile(profile);
-    await chrome.storage.local.set({ [ROT_KEY]: Date.now() });
-  } catch {}
-});
-
-chrome.webNavigation.onCommitted.addListener(async (details) => {
-  if (details.frameId === 0) return;
-  if (!isIncognitoContext()) return;
-
-  const isTwitch = /^https?:\/\/([^/]+\.)?twitch\.tv\//.test(details.url);
-  const isBlank =
-    details.url.startsWith("about:blank") ||
-    details.url.startsWith("about:srcdoc");
-  if (!isTwitch && !isBlank) return;
-
-  try {
-    const sess = await chrome.storage.session.get(PROFILE_KEY);
-    const profile = sess[PROFILE_KEY];
-    if (!profile) return;
-
-    await chrome.scripting.executeScript({
-      target: { tabId: details.tabId, frameIds: [details.frameId] },
-      world: "MAIN",
-      args: [profile],
-      func: (p) => {
-        try {
-          localStorage.setItem("__tsr_profile_v1", JSON.stringify(p));
-          window.postMessage({ __tsr: 1, type: "CONFIG", profile: p }, "*");
-        } catch {}
+    safeDefine(NavProto, "brave", {
+      configurable: true,
+      enumerable: origDesc ? origDesc.enumerable : false,
+      get: function () {
+        if (CFG.profile && CFG.profile.browser === "brave") {
+          if (!this.__tsr_brave) {
+            Object.defineProperty(this, "__tsr_brave", {
+              value: new BraveSpoof(),
+              configurable: true
+            });
+          }
+          return this.__tsr_brave;
+        }
+        return origGet ? origGet.call(this) : undefined;
       }
     });
-  } catch {}
-}, {
-  url: [
-    { hostSuffix: "twitch.tv" },
-    { urlPrefix: "about:blank" },
-    { urlPrefix: "about:srcdoc" }
-  ]
-});
+  })();
 
-async function openDashboard(sender) {
-  let url;
-  try {
-    url = chrome.runtime.getURL("options.html");
-  } catch (e) {
-    return { ok: false, error: "getURL failed: " + (e?.message || String(e)) };
-  }
+  (function patchPlugins() {
+    if (typeof Navigator === "undefined" || !Navigator.prototype) return;
+    const NavProto = Navigator.prototype;
 
-  const attempts = [];
-  if (typeof sender?.tab?.windowId === "number") {
-    attempts.push({ url, active: true, windowId: sender.tab.windowId });
-  }
-  attempts.push({ url, active: true });
+    function buildPlugins(profile) {
+      if (!profile) return null;
+      if (profile.browser !== "chrome" &&
+          profile.browser !== "edge" &&
+          profile.browser !== "brave") return null;
 
-  let lastErr = null;
-  for (let i = 0; i < attempts.length; i++) {
-    try {
-      const t = await chrome.tabs.create(attempts[i]);
-      return { ok: true, tabId: t?.id, url };
-    } catch (e) {
-      lastErr = e;
+      const pluginNames = [
+        { name: "PDF Viewer", filename: "internal-pdf-viewer", description: "Portable Document Format" },
+        { name: "Chrome PDF Viewer", filename: "internal-pdf-viewer", description: "" },
+        { name: "Chromium PDF Viewer", filename: "internal-pdf-viewer", description: "" }
+      ];
+      if (profile.browser === "edge") {
+        pluginNames.push({ name: "Microsoft Edge PDF Viewer", filename: "internal-pdf-viewer", description: "" });
+      }
+
+      const mimeTypes = [
+        { type: "application/pdf", suffixes: "pdf", description: "Portable Document Format" },
+        { type: "text/pdf", suffixes: "pdf", description: "Portable Document Format" }
+      ];
+
+      const fakeMimeTypes = mimeTypes.map(mt => {
+        const obj = Object.create(MimeType.prototype);
+        safeDefine(obj, "type", { value: mt.type, enumerable: true });
+        safeDefine(obj, "suffixes", { value: mt.suffixes, enumerable: true });
+        safeDefine(obj, "description", { value: mt.description, enumerable: true });
+        safeDefine(obj, "enabledPlugin", { value: null, enumerable: true });
+        return obj;
+      });
+
+      const fakePlugins = pluginNames.map(pn => {
+        const obj = Object.create(Plugin.prototype);
+        safeDefine(obj, "name", { value: pn.name, enumerable: true });
+        safeDefine(obj, "filename", { value: pn.filename, enumerable: true });
+        safeDefine(obj, "description", { value: pn.description, enumerable: true });
+        safeDefine(obj, "length", { value: fakeMimeTypes.length, enumerable: true });
+        fakeMimeTypes.forEach((mt, i) => {
+          safeDefine(obj, i, { value: mt, enumerable: true });
+          safeDefine(obj, mt.type, { value: mt, enumerable: true });
+        });
+        safeDefine(obj, "item", {
+          value: mimic(function (idx) { return fakeMimeTypes[idx] || null; }, Plugin.prototype.item, "item", 1),
+          configurable: true, writable: true
+        });
+        safeDefine(obj, "namedItem", {
+          value: mimic(function (name) {
+            return fakeMimeTypes.find(mt => mt.type === name) || null;
+          }, Plugin.prototype.namedItem, "namedItem", 1),
+          configurable: true, writable: true
+        });
+        return obj;
+      });
+
+      const arr = Object.create(PluginArray.prototype);
+      safeDefine(arr, "length", { value: fakePlugins.length, enumerable: true });
+      fakePlugins.forEach((p, i) => {
+        safeDefine(arr, i, { value: p, enumerable: true });
+        safeDefine(arr, p.name, { value: p, enumerable: true });
+      });
+      safeDefine(arr, "item", {
+        value: mimic(function (idx) { return fakePlugins[idx] || null; }, PluginArray.prototype.item, "item", 1),
+        configurable: true, writable: true
+      });
+      safeDefine(arr, "namedItem", {
+        value: mimic(function (name) {
+          return fakePlugins.find(p => p.name === name) || null;
+        }, PluginArray.prototype.namedItem, "namedItem", 1),
+        configurable: true, writable: true
+      });
+      safeDefine(arr, Symbol.iterator, {
+        value: function () { return fakePlugins[Symbol.iterator](); },
+        configurable: true, writable: true
+      });
+      return arr;
     }
-  }
 
-  try {
-    const winOpts = { url, focused: true };
-    if (isIncognitoContext()) winOpts.incognito = true;
-    const w = await chrome.windows.create(winOpts);
-    return { ok: true, windowId: w?.id, url };
-  } catch (e) {
-    if (!lastErr) lastErr = e;
-  }
-
-  return {
-    ok: false,
-    error: lastErr ? (lastErr.message || String(lastErr)) : "unknown",
-    url
-  };
-}
-
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg || typeof msg !== "object") return false;
-
-  if (msg.type === "GET_INCOGNITO") {
-    sendResponse({ incognito: isIncognitoSender(sender) });
-    return false;
-  }
-  if (msg.type === "GET_PROFILE") {
-    chrome.storage.session.get(PROFILE_KEY)
-      .then(d => sendResponse({ ok: true, profile: d[PROFILE_KEY] || null }))
-      .catch(e => sendResponse({ ok: false, error: String(e) }));
-    return true;
-  }
-  if (msg.type === "BG_LOG") {
-    sendResponse({ ok: true });
-    return false;
-  }
-  if (INCOGNITO_ONLY && !isIncognitoSender(sender)) {
-    sendResponse({ ok: false, error: "incognito_required" });
-    return false;
-  }
-
-  switch (msg.type) {
-    case "NOTIFY": {
-      notify(msg.title, msg.message);
-      sendResponse({ ok: true });
-      return false;
+    const pluginsDesc = Object.getOwnPropertyDescriptor(NavProto, "plugins");
+    if (pluginsDesc && typeof pluginsDesc.get === "function") {
+      const orig = pluginsDesc.get;
+      const patched = mimic(function () {
+        if (!CFG.profile) return orig.call(this);
+        const fake = buildPlugins(CFG.profile);
+        return fake || orig.call(this);
+      }, orig, "get plugins", 0);
+      safeDefine(NavProto, "plugins", {
+        configurable: true,
+        enumerable: pluginsDesc.enumerable,
+        get: patched
+      });
     }
-    case "ROTATE_UA": {
-      (async () => {
+
+    const pdfDesc = Object.getOwnPropertyDescriptor(NavProto, "pdfViewerEnabled");
+    if (pdfDesc && typeof pdfDesc.get === "function") {
+      const orig = pdfDesc.get;
+      const patched = mimic(function () {
+        if (!CFG.profile) return orig.call(this);
+        const b = CFG.profile.browser;
+        if (b === "chrome" || b === "edge" || b === "brave" || b === "safari") return true;
+        return orig.call(this);
+      }, orig, "get pdfViewerEnabled", 0);
+      safeDefine(NavProto, "pdfViewerEnabled", {
+        configurable: true,
+        enumerable: pdfDesc.enumerable,
+        get: patched
+      });
+    }
+  })();
+
+  (function patchScreen() {
+    if (typeof Screen === "undefined" || !Screen.prototype) return;
+    const ScreenProto = Screen.prototype;
+
+    function redefineScreen(name, getter) {
+      const desc = Object.getOwnPropertyDescriptor(ScreenProto, name);
+      if (!desc || typeof desc.get !== "function") return;
+      const orig = desc.get;
+      const patched = mimic(function () {
+        if (!CFG.profile || !CFG.profile.screen) return orig.call(this);
+        return getter(CFG.profile.screen);
+      }, orig, "get " + name, 0);
+      safeDefine(ScreenProto, name, {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: patched
+      });
+    }
+
+    redefineScreen("width",       (s) => s.width);
+    redefineScreen("height",      (s) => s.height);
+    redefineScreen("availWidth",  (s) => s.availWidth);
+    redefineScreen("availHeight", (s) => s.availHeight);
+    redefineScreen("colorDepth",  (s) => s.colorDepth);
+    redefineScreen("pixelDepth",  (s) => s.colorDepth);
+  })();
+
+  (function patchDPR() {
+    let desc = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+    let target = window;
+    if (!desc && typeof Window !== "undefined") {
+      desc = Object.getOwnPropertyDescriptor(Window.prototype, "devicePixelRatio");
+      target = Window.prototype;
+    }
+    if (!desc || typeof desc.get !== "function") return;
+    const orig = desc.get;
+    const patched = mimic(function () {
+      if (!CFG.profile || !CFG.profile.screen) return orig.call(this);
+      return CFG.profile.screen.pixelRatio;
+    }, orig, "get devicePixelRatio", 0);
+    safeDefine(target, "devicePixelRatio", {
+      configurable: true,
+      enumerable: desc.enumerable,
+      get: patched
+    });
+  })();
+
+  (function patchIntl() {
+    if (typeof Intl === "undefined" || !Intl.DateTimeFormat) return;
+    const DTF = Intl.DateTimeFormat;
+    const origResolvedOptions = DTF.prototype.resolvedOptions;
+    if (typeof origResolvedOptions !== "function") return;
+
+    DTF.prototype.resolvedOptions = mimic(function () {
+      const opts = origResolvedOptions.call(this);
+      if (!CFG.profile || !CFG.profile.timezone) return opts;
+      try { opts.timeZone = CFG.profile.timezone; } catch {}
+      return opts;
+    }, origResolvedOptions, "resolvedOptions", 0);
+
+    const origOffset = Date.prototype.getTimezoneOffset;
+    if (typeof origOffset === "function") {
+      Date.prototype.getTimezoneOffset = mimic(function () {
+        if (!CFG.profile || !CFG.profile.timezone) return origOffset.call(this);
         try {
-          const profile = await pickProfile();
-          await applyProfile(profile);
-          sendResponse({ ok: true, ua: profile.ua, browser: profile.browser, platform: profile.platform });
-        } catch (e) { sendResponse({ ok: false, error: String(e) }); }
-      })();
-      return true;
-    }
-    case "CLEAR_UA": {
-      clearRules().then(
-        () => sendResponse({ ok: true }),
-        e => sendResponse({ ok: false, error: String(e) })
-      );
-      return true;
-    }
-    case "RESET_LANGUAGE_EN": {
-      resetLanguageToEnglish().then(
-        () => sendResponse({ ok: true }),
-        e => sendResponse({ ok: false, error: String(e) })
-      );
-      return true;
-    }
-    case "OPEN_DASHBOARD": {
-      (async () => {
-        try {
-          const result = await openDashboard(sender);
-          sendResponse(result);
-        } catch (e) {
-          sendResponse({ ok: false, error: String(e?.message || e) });
+          const tz = CFG.profile.timezone;
+          const dtf = new DTF("en-US", {
+            timeZone: tz,
+            hour12: false,
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit"
+          });
+          const parts = dtf.formatToParts(this);
+          const m = {};
+          for (const p of parts) m[p.type] = p.value;
+          const hour = m.hour === "24" ? "00" : m.hour;
+          const asUTC = Date.UTC(
+            parseInt(m.year, 10), parseInt(m.month, 10) - 1, parseInt(m.day, 10),
+            parseInt(hour, 10), parseInt(m.minute, 10), parseInt(m.second, 10)
+          );
+          return Math.round((this.getTime() - asUTC) / 60000);
+        } catch {
+          return origOffset.call(this);
         }
-      })();
-      return true;
+      }, origOffset, "getTimezoneOffset", 0);
     }
-    case "ACQUIRE_TOKEN": {
-      acquireReportToken().then(sendResponse, e => sendResponse({ ok: false, error: String(e) }));
-      return true;
+  })();
+
+  (function patchVisibility() {
+    if (typeof Document === "undefined" || !Document.prototype) return;
+    const DocProto = Document.prototype;
+
+    let origHiddenGet = null;
+    {
+      const desc = Object.getOwnPropertyDescriptor(DocProto, "hidden");
+      if (desc && typeof desc.get === "function") origHiddenGet = desc.get;
     }
-    case "WRITE_PROGRESS": {
-      writeProgress(msg.payload).then(() => sendResponse({ ok: true }), e => sendResponse({ ok: false, error: String(e) }));
-      return true;
+
+    function redefineDocProp(name, value) {
+      const desc = Object.getOwnPropertyDescriptor(DocProto, name);
+      if (!desc || typeof desc.get !== "function") return;
+      const orig = desc.get;
+      const patched = mimic(function () {
+        return CFG.profile ? value : orig.call(this);
+      }, orig, "get " + name, 0);
+      safeDefine(DocProto, name, {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: patched
+      });
     }
-    case "APPEND_EMAIL": {
-      appendEmail(msg.record).then(() => sendResponse({ ok: true }), e => sendResponse({ ok: false, error: String(e) }));
-      return true;
+
+    redefineDocProp("hidden", false);
+    redefineDocProp("visibilityState", "visible");
+
+    const origHasFocus = DocProto.hasFocus;
+    if (typeof origHasFocus === "function") {
+      DocProto.hasFocus = mimic(function () {
+        return CFG.profile ? true : origHasFocus.call(this);
+      }, origHasFocus, "hasFocus", 0);
     }
-    case "READ_STATE": {
-      readState().then(data => sendResponse({ ok: true, data }), e => sendResponse({ ok: false, error: String(e) }));
-      return true;
+
+    const origRAF = window.requestAnimationFrame;
+    if (typeof origRAF === "function") {
+      window.requestAnimationFrame = mimic(function (cb) {
+        if (CFG.profile && origHiddenGet && origHiddenGet.call(document)) {
+          return setTimeout(() => cb(performance.now()), 16);
+        }
+        return origRAF.call(window, cb);
+      }, origRAF, "requestAnimationFrame", 1);
     }
-    default:
-      return false;
+  })();
+
+  (function patchRTC() {
+    const RTC = window.RTCPeerConnection;
+    if (typeof RTC !== "function") return;
+
+    const Patched = function (...args) {
+      if (!CFG.profile) return new RTC(...args);
+      const config = args[0];
+      const cfg = config ? { ...config } : {};
+      cfg.iceTransportPolicy = "relay";
+      return new RTC(cfg, ...args.slice(1));
+    };
+    mimic(Patched, RTC, "RTCPeerConnection", 0);
+    Patched.prototype = RTC.prototype;
+
+    try {
+      Object.defineProperty(RTC.prototype, "constructor", {
+        value: Patched, configurable: true, writable: true
+      });
+    } catch {}
+
+    try { window.RTCPeerConnection = Patched; } catch {}
+  })();
+
+  function addDetNoise(data, seed) {
+    let s = (seed || 1) >>> 0;
+    const step = 4 * 500;
+    for (let i = 0; i < data.length; i += step) {
+      s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+      const bit = (s & 1) ? 1 : -1;
+      data[i] = (data[i] + bit) & 0xff;
+    }
   }
-});
 
-chrome.runtime.onInstalled.addListener(() => { bootstrap(); });
-chrome.runtime.onStartup.addListener(() => { bootstrap(); });
-chrome.windows.onCreated.addListener((win) => {
-  if (win.incognito) bootstrap();
-  else bootstrap();
-});
+  function serializeNoisy(canvas, serializer) {
+    if (!CFG.profile) return serializer(canvas);
+    const ctx = canvas.getContext && canvas.getContext("2d");
+    if (!ctx || canvas.width <= 0 || canvas.height <= 0) return serializer(canvas);
+    let img;
+    try {
+      img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } catch {
+      return serializer(canvas);
+    }
+    const seed = hash32(
+      String(masterSeed()) + "|" + originTag() + "|" +
+      canvas.width + "x" + canvas.height
+    );
+    addDetNoise(img.data, seed);
+    const off = document.createElement("canvas");
+    off.width = canvas.width;
+    off.height = canvas.height;
+    const offCtx = off.getContext("2d");
+    if (!offCtx) return serializer(canvas);
+    offCtx.putImageData(img, 0, 0);
+    return serializer(off);
+  }
 
-(async () => {
-  await ensureSessionStorageAccess();
-  await bootstrap();
+  const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+  if (typeof origToDataURL === "function") {
+    HTMLCanvasElement.prototype.toDataURL = mimic(function (...args) {
+      try { return serializeNoisy(this, (c) => origToDataURL.apply(c, args)); }
+      catch { return origToDataURL.apply(this, args); }
+    }, origToDataURL, "toDataURL", 0);
+  }
+
+  const origToBlob = HTMLCanvasElement.prototype.toBlob;
+  if (typeof origToBlob === "function") {
+    HTMLCanvasElement.prototype.toBlob = mimic(function (cb, ...rest) {
+      try { return serializeNoisy(this, (c) => origToBlob.apply(c, [cb, ...rest])); }
+      catch { return origToBlob.apply(this, [cb, ...rest]); }
+    }, origToBlob, "toBlob", 1);
+  }
+
+  const SPOOF_BY_PLATFORM = {
+    Windows: {
+      vendor: "Google Inc. (NVIDIA)",
+      renderer: "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    },
+    macOS: {
+      vendor: "Google Inc. (Apple)",
+      renderer: "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)"
+    },
+    Linux: {
+      vendor: "Google Inc. (Intel)",
+      renderer: "ANGLE (Intel, Mesa Intel(R) UHD Graphics 620, OpenGL 4.6)"
+    }
+  };
+  const P_VENDOR = 0x9245;
+  const P_RENDERER = 0x9246;
+
+  const WEBGL_CONST = {
+    MAX_TEXTURE_SIZE: 0x0D33,
+    MAX_RENDERBUFFER_SIZE: 0x84E8,
+    MAX_VIEWPORT_DIMS: 0x0D3A,
+    ALIASED_LINE_WIDTH_RANGE: 0x846E,
+    ALIASED_POINT_SIZE_RANGE: 0x846D,
+    MAX_VERTEX_ATTRIBS: 0x8869,
+    MAX_VERTEX_UNIFORM_VECTORS: 0x8DFB,
+    MAX_FRAGMENT_UNIFORM_VECTORS: 0x8DFD,
+    MAX_VARYING_VECTORS: 0x8DFC,
+    MAX_COMBINED_TEXTURE_IMAGE_UNITS: 0x8B4D,
+    MAX_CUBE_MAP_TEXTURE_SIZE: 0x851C,
+    MAX_TEXTURE_IMAGE_UNITS: 0x8872,
+    MAX_VERTEX_TEXTURE_IMAGE_UNITS: 0x8B4C
+  };
+
+  function spoofValue(which) {
+    if (!CFG.profile) return null;
+    if (CFG.profile.browser !== "chrome" &&
+        CFG.profile.browser !== "brave") return null;
+    const s = SPOOF_BY_PLATFORM[CFG.profile.platform] || SPOOF_BY_PLATFORM.Windows;
+    return which === "vendor" ? s.vendor : s.renderer;
+  }
+
+  function patchWebGL(proto) {
+    if (!proto || !proto.getParameter) return;
+    if (nativeLike.has(proto.getParameter)) return;
+
+    const origGetParameter = proto.getParameter;
+    proto.getParameter = mimic(function (p) {
+      if (p === P_VENDOR) {
+        const v = spoofValue("vendor");
+        if (v !== null) return v;
+      } else if (p === P_RENDERER) {
+        const v = spoofValue("renderer");
+        if (v !== null) return v;
+      }
+
+      if (CFG.profile && CFG.profile.webglParams) {
+        for (const [name, constVal] of Object.entries(WEBGL_CONST)) {
+          if (p === constVal) {
+            const val = CFG.profile.webglParams[name];
+            if (val !== undefined) {
+              return Array.isArray(val) ? new Float32Array(val) : val;
+            }
+          }
+        }
+      }
+
+      return origGetParameter.apply(this, arguments);
+    }, origGetParameter, "getParameter", 1);
+
+    const origGetSupportedExtensions = proto.getSupportedExtensions;
+    if (typeof origGetSupportedExtensions === "function") {
+      proto.getSupportedExtensions = mimic(function () {
+        if (CFG.profile && CFG.profile.webglParams && CFG.profile.webglParams.SUPPORTED_EXTENSIONS) {
+          return CFG.profile.webglParams.SUPPORTED_EXTENSIONS.slice();
+        }
+        return origGetSupportedExtensions.apply(this, arguments);
+      }, origGetSupportedExtensions, "getSupportedExtensions", 0);
+    }
+
+    const origGetExtension = proto.getExtension;
+    if (typeof origGetExtension === "function") {
+      proto.getExtension = mimic(function (name) {
+        if (CFG.profile && CFG.profile.webglParams && CFG.profile.webglParams.SUPPORTED_EXTENSIONS) {
+          if (!CFG.profile.webglParams.SUPPORTED_EXTENSIONS.includes(name)) {
+            return null;
+          }
+        }
+        return origGetExtension.apply(this, arguments);
+      }, origGetExtension, "getExtension", 1);
+    }
+  }
+  if (typeof WebGLRenderingContext !== "undefined") patchWebGL(WebGLRenderingContext.prototype);
+  if (typeof WebGL2RenderingContext !== "undefined") patchWebGL(WebGL2RenderingContext.prototype);
+
+  (function patchWebGPU() {
+    if (typeof GPUAdapterInfo === "undefined" || !GPUAdapterInfo.prototype) return;
+
+    const FAKE = {
+      Windows: { vendor: "nvidia", architecture: "gen-3",    device: "NVIDIA GeForce RTX 3060", description: "" },
+      macOS:   { vendor: "apple",  architecture: "apple-m2", device: "Apple M2",                description: "" },
+      Linux:   { vendor: "intel",  architecture: "gen-3",    device: "Intel UHD Graphics 620",  description: "" }
+    };
+
+    function fakeFor(name) {
+      if (!CFG.profile) return undefined;
+      if (CFG.profile.browser !== "chrome" &&
+          CFG.profile.browser !== "brave") return undefined;
+      const s = FAKE[CFG.profile.platform] || FAKE.Windows;
+      return s[name];
+    }
+
+    for (const name of ["vendor", "architecture", "device", "description"]) {
+      const desc = Object.getOwnPropertyDescriptor(GPUAdapterInfo.prototype, name);
+      if (!desc || typeof desc.get !== "function") continue;
+      const orig = desc.get;
+      const patched = mimic(function () {
+        const fake = fakeFor(name);
+        return fake !== undefined ? fake : orig.call(this);
+      }, orig, "get " + name, 0);
+      safeDefine(GPUAdapterInfo.prototype, name, {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: patched
+      });
+    }
+  })();
+
+  (function patchAudio() {
+    if (typeof AudioContext === "undefined" && typeof webkitAudioContext === "undefined") return;
+
+    function audioSeedFor(x) {
+      try {
+        const sr = x.sampleRate || (x.context && x.context.sampleRate) || 0;
+        const len = x.length || x.frequencyBinCount || 0;
+        const nc = x.numberOfChannels || 0;
+        return hash32(
+          String(masterSeed()) + "|" + originTag() + "|a" + sr + "|" + len + "|" + nc
+        );
+      } catch { return 1; }
+    }
+
+    function noiseForAudio(data, seed) {
+      let s = (seed || 1) >>> 0;
+      for (let i = 0; i < data.length; i += 100) {
+        s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+        data[i] += (s & 1) ? 1e-8 : -1e-8;
+      }
+    }
+
+    if (typeof AudioBuffer !== "undefined") {
+      const origGetChannelData = AudioBuffer.prototype.getChannelData;
+      if (typeof origGetChannelData === "function") {
+        AudioBuffer.prototype.getChannelData = mimic(function (channel) {
+          const data = origGetChannelData.call(this, channel);
+          if (!CFG.profile) return data;
+          noiseForAudio(data, audioSeedFor(this));
+          return data;
+        }, origGetChannelData, "getChannelData", 1);
+      }
+    }
+  })();
+
+  (function patchFonts() {
+    if (typeof FontFaceSet !== "undefined" && FontFaceSet.prototype &&
+        typeof FontFaceSet.prototype.check === "function") {
+      const origCheck = FontFaceSet.prototype.check;
+      const GENERIC_FONTS = /(?:^|\s)(?:["']?)(serif|sans-serif|monospace|cursive|fantasy|system-ui)(?:["']?)$/i;
+      try {
+        FontFaceSet.prototype.check = mimic(function (font, text = " ") {
+          if (CFG.profile && GENERIC_FONTS.test(String(font))) return true;
+          return origCheck.call(this, font, text);
+        }, origCheck, "check", 1);
+      } catch {}
+    }
+
+    const origMeasure = CanvasRenderingContext2D.prototype.measureText;
+    if (typeof origMeasure === "function") {
+      CanvasRenderingContext2D.prototype.measureText = mimic(function (text) {
+        const m = origMeasure.call(this, text);
+        if (!CFG.profile) return m;
+        const seed = hash32(
+          String(masterSeed()) + "|" + originTag() + "|" + text + this.font
+        );
+        const delta = ((seed % 100) - 50) / 100000;
+        try {
+          const w = m.width;
+          if (typeof w === "number") {
+            Object.defineProperty(m, "width", { value: w + delta, configurable: true });
+          }
+        } catch {}
+        return m;
+      }, origMeasure, "measureText", 1);
+    }
+  })();
+
+  function buildWorkerSource(profile, salt) {
+    const pJson = JSON.stringify(profile);
+    const s = (salt | 0) || 0;
+    return `(function(){
+  "use strict";
+  var __P__ = ${pJson};
+  if (!__P__) return;
+  var SALT = ${s};
+  function hash32(str) {
+    var h = 0x811c9dc5 ^ SALT;
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
+  try {
+    var NavProto = Object.getPrototypeOf(self.navigator);
+    var _ts = Function.prototype.toString;
+    var _nat = new WeakMap();
+    function markNat(fn, orig) { _nat.set(fn, orig); return fn; }
+    function mimic(fn, orig, name, length) {
+      try {
+        Object.defineProperty(fn, "name",   { value: name,   configurable: true });
+        Object.defineProperty(fn, "length", { value: length, configurable: true });
+      } catch (e) {}
+      return markNat(fn, orig);
+    }
+    var patchedToString = function () {
+      var o = _nat.get(this);
+      return o ? _ts.call(o) : _ts.call(this);
+    };
+    mimic(patchedToString, _ts, "toString", 0);
+    Function.prototype.toString = patchedToString;
+    function redefine(name, value) {
+      if (value === undefined) return;
+      var d = Object.getOwnPropertyDescriptor(NavProto, name);
+      if (!d || typeof d.get !== "function") return;
+      var orig = d.get;
+      var fn = mimic(function () { return value; }, orig, "get " + name, 0);
+      try {
+        Reflect.defineProperty(NavProto, name, {
+          configurable: true, enumerable: d.enumerable, get: fn
+        });
+      } catch (e) {}
+    }
+    redefine("userAgent", __P__.ua);
+    redefine("appVersion", __P__.appVersion);
+    redefine("platform", __P__.platformName);
+    if (__P__.languages && __P__.languages.length) {
+      redefine("language", __P__.languages[0]);
+      redefine("languages", Object.freeze(__P__.languages.slice()));
+    }
+    redefine("hardwareConcurrency", __P__.hardwareConcurrency);
+    redefine("deviceMemory", __P__.deviceMemory);
+    redefine("maxTouchPoints", 0);
+
+    if (__P__.browser === "brave") {
+      try {
+        var braveObj = { isBrave: function () { return Promise.resolve(true); } };
+        var bd = Object.getOwnPropertyDescriptor(NavProto, "brave");
+        if (!bd) {
+          Reflect.defineProperty(NavProto, "brave", {
+            configurable: true, enumerable: false,
+            get: function () { return braveObj; }
+          });
+        }
+      } catch (e) {}
+    }
+
+    if (__P__.browser === "firefox" || __P__.browser === "safari") {
+      try {
+        var cd = Object.getOwnPropertyDescriptor(NavProto, "connection");
+        if (cd && cd.configurable) {
+          delete NavProto.connection;
+        }
+      } catch (e) {}
+    }
+
+    if (__P__.timezone && typeof Intl !== "undefined" && Intl.DateTimeFormat) {
+      try {
+        var DTF = Intl.DateTimeFormat;
+        var _ro = DTF.prototype.resolvedOptions;
+        DTF.prototype.resolvedOptions = function () {
+          var o = _ro.call(this);
+          try { o.timeZone = __P__.timezone; } catch (e) {}
+          return o;
+        };
+        var _off = Date.prototype.getTimezoneOffset;
+        Date.prototype.getTimezoneOffset = function () {
+          try {
+            var dtf = new DTF("en-US", {
+              timeZone: __P__.timezone,
+              hour12: false,
+              year: "numeric", month: "2-digit", day: "2-digit",
+              hour: "2-digit", minute: "2-digit", second: "2-digit"
+            });
+            var parts = dtf.formatToParts(this);
+            var m = {};
+            for (var i = 0; i < parts.length; i++) m[parts[i].type] = parts[i].value;
+            var hour = m.hour === "24" ? "00" : m.hour;
+            var asUTC = Date.UTC(
+              parseInt(m.year, 10), parseInt(m.month, 10) - 1, parseInt(m.day, 10),
+              parseInt(hour, 10), parseInt(m.minute, 10), parseInt(m.second, 10)
+            );
+            return Math.round((this.getTime() - asUTC) / 60000);
+          } catch (e) {
+            return _off.call(this);
+          }
+        };
+      } catch (e) {}
+    }
+  } catch (e) {}
+  if (typeof AudioBuffer !== "undefined") {
+    var _g = AudioBuffer.prototype.getChannelData;
+    AudioBuffer.prototype.getChannelData = function (ch) {
+      var d = _g.call(this, ch);
+      var s = hash32("ch" + ch + "|" + this.sampleRate + "|" + this.length);
+      for (var i = 0; i < d.length; i += 100) {
+        s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+        d[i] += (s & 1) ? 1e-8 : -1e-8;
+      }
+      return d;
+    };
+  }
+})();`;
+  }
+
+  (function patchWorkers() {
+    if (typeof Worker === "undefined") return;
+    const OrigWorker = Worker;
+
+    function PatchedWorker(url, options = undefined) {
+      try {
+        const isModule = options && options.type === "module";
+        let resolved = url;
+        try {
+          if (typeof url === "string") {
+            resolved = new URL(url, location.href).href;
+          }
+        } catch {}
+        if (
+          !isModule &&
+          CFG.profile &&
+          typeof resolved === "string" &&
+          resolved.startsWith(location.origin + "/") &&
+          !resolved.startsWith("blob:")
+        ) {
+          const source = buildWorkerSource(CFG.profile, profileSalt());
+          const blob = new Blob([source + "\nimportScripts(" + JSON.stringify(resolved) + ");"], {
+            type: "application/javascript"
+          });
+          const blobUrl = URL.createObjectURL(blob);
+          return new OrigWorker(blobUrl, options);
+        }
+      } catch {}
+      return new OrigWorker(url, options);
+    }
+
+    mimic(PatchedWorker, OrigWorker, "Worker", 1);
+    PatchedWorker.prototype = OrigWorker.prototype;
+
+    try {
+      Object.defineProperty(OrigWorker.prototype, "constructor", {
+        value: PatchedWorker, configurable: true, writable: true
+      });
+    } catch {}
+
+    try { window.Worker = PatchedWorker; } catch {}
+  })();
+
+  (function patchIframes() {
+    if (typeof MutationObserver === "undefined") return;
+    const seen = new WeakSet();
+    const obs = new MutationObserver((mutations) => {
+      if (!CFG.profile) return;
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node && node.tagName === "IFRAME" && !seen.has(node)) {
+            seen.add(node);
+            try {
+              node.contentWindow.postMessage(
+                { __tsr: 1, type: "CONFIG", profile: CFG.profile }, "*"
+              );
+            } catch {}
+          }
+        }
+      }
+    });
+    try {
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+    } catch {}
+  })();
+
 })();
