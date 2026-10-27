@@ -254,10 +254,6 @@
     return out;
   }
 
-  // ИСПРАВЛЕНИЕ: приоритет Edg/ над Chrome/. UA Edge содержит и
-  // "Chrome/<major>.0.0.0" (Chromium-токен), и "Edg/<real version>".
-  // Раньше regex (Chrome|Firefox|Edg) матчил первым "Chrome/X.0.0.0",
-  // из-за чего дашборд показывал "…Chrome/152.0.0.0" для Edge 152.
   function shortUA(ua) {
     if (!ua) return "—";
     let m = ua.match(/Edg\/[\d.]+/);
@@ -377,11 +373,14 @@
 
     $("fp-browser").textContent  = profile ? profile.browser : "—";
     $("fp-platform").textContent = profile ? profile.platform : "—";
-    // ИСПРАВЛЕНИЕ: для Edge явно подписываем версию как "Edge X.Y.Z",
-    // чтобы не путать с Chrome X.0.0.0 (Chromium-токен в UA Edge).
-    $("fp-version").textContent  = profile
-      ? `${profile.browser === "edge" ? "Edge " : ""}${profile.version}`
-      : "—";
+    // Отображаем версию с префиксом для Edge и Brave.
+    let versionLabel = "—";
+    if (profile) {
+      if (profile.browser === "edge") versionLabel = `Edge ${profile.version}`;
+      else if (profile.browser === "brave") versionLabel = `Brave ${profile.version}`;
+      else versionLabel = profile.version;
+    }
+    $("fp-version").textContent  = versionLabel;
     $("fp-rate").textContent     = rate ? `${rate.tokens}/${3}` : "3/3";
     $("fp-ua-full").textContent  = profile ? profile.ua : "";
   }

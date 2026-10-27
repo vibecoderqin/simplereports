@@ -124,7 +124,9 @@
       const origGet = uaDesc.get;
       const patched = mimic(function () {
         if (!CFG.profile) return origGet.call(this);
-        if (CFG.profile.browser !== "chrome") return undefined;
+        if (CFG.profile.browser !== "chrome" &&
+            CFG.profile.browser !== "edge" &&
+            CFG.profile.browser !== "brave") return undefined;
         let cached = uaDataCache.get(CFG.profile);
         if (!cached) {
           cached = new FakeNavigatorUAData(CFG.profile);
@@ -205,11 +207,42 @@
     }
   })();
 
+  // ---------- Brave ----------
+  (function patchBrave() {
+    if (typeof Navigator === "undefined" || !Navigator.prototype) return;
+    const NavProto = Navigator.prototype;
+
+    // Сохраняем оригинальный геттер, если он есть (в настоящем Brave).
+    const origDesc = Object.getOwnPropertyDescriptor(NavProto, "brave");
+    const origGet = origDesc && typeof origDesc.get === "function" ? origDesc.get : null;
+
+    // Фейковый объект Brave с методом isBrave().
+    function BraveSpoof() {}
+    BraveSpoof.prototype.isBrave = function () {
+      return Promise.resolve(true);
+    };
+
+    safeDefine(NavProto, "brave", {
+      configurable: true,
+      enumerable: origDesc ? origDesc.enumerable : false,
+      get: function () {
+        // Если активен профиль Brave — возвращаем фейковый объект.
+        if (CFG.profile && CFG.profile.browser === "brave") {
+          if (!this.__tsr_brave) {
+            Object.defineProperty(this, "__tsr_brave", {
+              value: new BraveSpoof(),
+              configurable: true
+            });
+          }
+          return this.__tsr_brave;
+        }
+        // Иначе — оригинальное поведение (или undefined).
+        return origGet ? origGet.call(this) : undefined;
+      }
+    });
+  })();
+
   // ---------- WebRTC ----------
-  // ИСПРАВЛЕНИЕ: iceTransportPolicy = "relay" теперь применяется только при
-  // активном профиле. Раньше relay форсился безусловно — это ломало
-  // ICE-негоциацию на нормальном Twitch и могло приводить к выбору другого
-  // edge/CDN, а от него зависит региональный контент и язык.
   (function patchRTC() {
     const RTC = window.RTCPeerConnection;
     if (typeof RTC !== "function") return;
@@ -266,10 +299,6 @@
   }
 
   function serializeNoisy(canvas, serializer) {
-    // ИСПРАВЛЕНИЕ: шум добавляем только при активном профиле. Раньше
-    // toDataURL/toBlob портили пиксели безусловно, что задевало и нормальный
-    // Twitch (рендер превью, оффскрин-пайплайны) и могло приводить к
-    // fallback-поведению, включая серверный выбор локали.
     if (!CFG.profile) return serializer(canvas);
     const ctx = canvas.getContext && canvas.getContext("2d");
     if (!ctx || canvas.width <= 0 || canvas.height <= 0) return serializer(canvas);
@@ -325,7 +354,8 @@
 
   function spoofValue(which) {
     if (!CFG.profile) return null;
-    if (CFG.profile.browser !== "chrome") return null;
+    if (CFG.profile.browser !== "chrome" &&
+        CFG.profile.browser !== "brave") return null;
     const s = SPOOF_BY_PLATFORM[CFG.profile.platform] || SPOOF_BY_PLATFORM.Windows;
     return which === "vendor" ? s.vendor : s.renderer;
   }
@@ -359,7 +389,9 @@
     };
 
     function fakeFor(name) {
-      if (!CFG.profile || CFG.profile.browser !== "chrome") return undefined;
+      if (!CFG.profile) return undefined;
+      if (CFG.profile.browser !== "chrome" &&
+          CFG.profile.browser !== "brave") return undefined;
       const s = FAKE[CFG.profile.platform] || FAKE.Windows;
       return s[name];
     }
@@ -541,6 +573,20 @@
     }
     redefine("hardwareConcurrency", __P__.hardwareConcurrency);
     redefine("deviceMemory", __P__.deviceMemory);
+
+    // Brave spoof в Worker (navigator.brave)
+    if (__P__.browser === "brave") {
+      try {
+        var braveObj = { isBrave: function () { return Promise.resolve(true); } };
+        var bd = Object.getOwnPropertyDescriptor(NavProto, "brave");
+        if (!bd) {
+          Reflect.defineProperty(NavProto, "brave", {
+            configurable: true, enumerable: false,
+            get: function () { return braveObj; }
+          });
+        }
+      } catch (e) {}
+    }
   } catch (e) {}
   if (typeof AudioBuffer !== "undefined") {
     var _g = AudioBuffer.prototype.getChannelData;

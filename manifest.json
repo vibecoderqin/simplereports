@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TS Reporter",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Incognito-only reporting helper with fingerprint anti-detect.",
   "incognito": "split",
   "minimum_chrome_version": "120",
@@ -27,29 +27,27 @@
     "type": "module"
   },
   "content_scripts": [
-  {
-    "matches": [
-      "https://twitch.tv/*",
-      "https://*.twitch.tv/*",
-      "https://abrahamjuliot.github.io/*"
-    ],
-    "js": ["content/isolated.js"],
-    "run_at": "document_start",
-    "all_frames": true,
-    "match_about_blank": true
-  },
-  {
-    "matches": [
-      "https://twitch.tv/*",
-      "https://*.twitch.tv/*",
-      "https://abrahamjuliot.github.io/*" 
-    ],
-    "js": ["content/injected.js"],
-    "run_at": "document_start",
-    "all_frames": true,
-    "match_about_blank": true,
-    "world": "MAIN"
-  },
+    {
+      "matches": [
+        "https://twitch.tv/*",
+        "https://*.twitch.tv/*"
+      ],
+      "js": ["content/isolated.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "https://twitch.tv/*",
+        "https://*.twitch.tv/*"
+      ],
+      "js": ["content/injected.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    },
     {
       "matches": ["https://twitch.tv/*", "https://*.twitch.tv/*"],
       "js": ["content.js"],

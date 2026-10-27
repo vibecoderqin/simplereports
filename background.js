@@ -61,7 +61,7 @@ function isIncognitoSender(sender) {
 }
 
 // ------------------------------------------------------------
-// Пул профилей (актуально на октябрь 2026 + предыдущие 6 месяцев)
+// Пул профилей (актуально на октябрь 2026)
 // ------------------------------------------------------------
 const PROFILES = [
   // ===== Chrome 156 (stable, Oct 2026) =====
@@ -130,62 +130,6 @@ const PROFILES = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
   },
 
-  // ===== Chrome 153 (stable, Sep 2026) =====
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "153.0.7988.92", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7988.92 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "153.0.7988.93", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7988.93 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "macOS", mobile: false,
-    version: "153.0.7988.92", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7988.92 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Linux", mobile: false,
-    version: "153.0.7988.92", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.7988.92 Safari/537.36"
-  },
-
-  // ===== Chrome 152 (stable, Aug 2026) =====
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "152.0.7891.115", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7891.115 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "macOS", mobile: false,
-    version: "152.0.7891.115", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7891.115 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Linux", mobile: false,
-    version: "152.0.7891.115", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.7891.115 Safari/537.36"
-  },
-
-  // ===== Chrome 151 (stable, Aug 2026) =====
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "151.0.7813.56", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7813.56 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "macOS", mobile: false,
-    version: "151.0.7813.56", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7813.56 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Linux", mobile: false,
-    version: "151.0.7813.56", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.7813.56 Safari/537.36"
-  },
-
   // ===== Chrome 150 (stable, Jul 2026) =====
   {
     browser: "chrome", platform: "Windows", mobile: false,
@@ -199,6 +143,74 @@ const PROFILES = [
   },
   {
     browser: "chrome", platform: "Linux", mobile: false,
+    version: "150.0.7742.92", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
+  },
+
+  // ===== Brave 156 (Chromium 156, Oct 2026) =====
+  {
+    browser: "brave", platform: "Windows", mobile: false,
+    version: "156.0.8078.47", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
+  },
+  {
+    browser: "brave", platform: "macOS", mobile: false,
+    version: "156.0.8078.47", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
+  },
+  {
+    browser: "brave", platform: "Linux", mobile: false,
+    version: "156.0.8078.47", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
+  },
+
+  // ===== Brave 155 (Chromium 155, Oct 2026) =====
+  {
+    browser: "brave", platform: "Windows", mobile: false,
+    version: "155.0.8059.84", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
+  },
+  {
+    browser: "brave", platform: "macOS", mobile: false,
+    version: "155.0.8059.84", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
+  },
+  {
+    browser: "brave", platform: "Linux", mobile: false,
+    version: "155.0.8059.84", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
+  },
+
+  // ===== Brave 154 (Chromium 154, Sep 2026) =====
+  {
+    browser: "brave", platform: "Windows", mobile: false,
+    version: "154.0.8037.92", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
+  },
+  {
+    browser: "brave", platform: "macOS", mobile: false,
+    version: "154.0.8037.92", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
+  },
+  {
+    browser: "brave", platform: "Linux", mobile: false,
+    version: "154.0.8037.92", ua:
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
+  },
+
+  // ===== Brave 150 (Chromium 150, Jul 2026) =====
+  {
+    browser: "brave", platform: "Windows", mobile: false,
+    version: "150.0.7742.92", ua:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
+  },
+  {
+    browser: "brave", platform: "macOS", mobile: false,
+    version: "150.0.7742.92", ua:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
+  },
+  {
+    browser: "brave", platform: "Linux", mobile: false,
     version: "150.0.7742.92", ua:
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
   },
@@ -425,23 +437,6 @@ const PROFILES = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66"
   },
 
-  // ===== Microsoft Edge 151 (stable, Aug 2026) =====
-  {
-    browser: "edge", platform: "Windows", mobile: false,
-    version: "151.0.4129.107", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.107"
-  },
-  {
-    browser: "edge", platform: "macOS", mobile: false,
-    version: "151.0.4129.107", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.107"
-  },
-  {
-    browser: "edge", platform: "Linux", mobile: false,
-    version: "151.0.4129.107", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36 Edg/151.0.4129.107"
-  },
-
   // ===== Microsoft Edge 150 (stable, Jul 2026) =====
   {
     browser: "edge", platform: "Windows", mobile: false,
@@ -469,6 +464,7 @@ function enrichProfile(p) {
   const vendor =
     p.browser === "chrome" ? "Google Inc." :
     p.browser === "edge"   ? "Microsoft Corporation" :
+    p.browser === "brave"  ? "Google Inc." : // Brave сохраняет Google Inc. как vendor
     p.browser === "safari" ? "Apple Computer, Inc." : "";
   const lang = LANG_POOL[(Math.random() * LANG_POOL.length) | 0];
   const hardwareConcurrency =
@@ -502,9 +498,13 @@ function enrichProfile(p) {
     platformVersion
   };
 
-  // ----- Chrome / Edge (Chromium-based) -----
-  if (p.browser === "chrome" || p.browser === "edge") {
-    const brandName = p.browser === "edge" ? "Microsoft Edge" : "Google Chrome";
+  // ----- Chrome / Edge / Brave (Chromium-based) -----
+  if (p.browser === "chrome" || p.browser === "edge" || p.browser === "brave") {
+    let brandName;
+    if (p.browser === "edge") brandName = "Microsoft Edge";
+    else if (p.browser === "brave") brandName = "Brave";
+    else brandName = "Google Chrome";
+
     out.uaBrands = [
       { brand: "Chromium",      version: major },
       { brand: "Not(A:Brand",   version: "24" },
@@ -546,6 +546,9 @@ function buildSecChUa(browser, major, grease) {
   if (browser === "edge") {
     return `"Microsoft Edge";v="${major}", "Chromium";v="${major}", "Not(A:Brand";v="${grease}"`;
   }
+  if (browser === "brave") {
+    return `"Chromium";v="${major}", "Brave";v="${major}", "Not(A:Brand";v="${grease}"`;
+  }
   // chrome (default)
   return `"Chromium";v="${major}", "Not(A:Brand";v="${grease}", "Google Chrome";v="${major}"`;
 }
@@ -553,6 +556,9 @@ function buildSecChUa(browser, major, grease) {
 function buildFullVersionList(browser, fullVersion, grease) {
   if (browser === "edge") {
     return `"Microsoft Edge";v="${fullVersion}", "Chromium";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0"`;
+  }
+  if (browser === "brave") {
+    return `"Chromium";v="${fullVersion}", "Brave";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0"`;
   }
   // chrome (default)
   return `"Chromium";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0", "Google Chrome";v="${fullVersion}"`;
@@ -564,8 +570,8 @@ function buildRequestHeaders(profile) {
     { header: "accept-language", operation: "set", value: profile.acceptLanguage }
   ];
 
-  // Chromium-based браузеры (Chrome и Edge) отправляют Client Hints
-  if (profile.browser === "chrome" || profile.browser === "edge") {
+  // Chromium-based браузеры (Chrome, Edge, Brave) отправляют Client Hints
+  if (profile.browser === "chrome" || profile.browser === "edge" || profile.browser === "brave") {
     const v = profile.version, m = profile.major, g = 24;
     headers.push(
       { header: "sec-ch-ua",                   operation: "set", value: buildSecChUa(profile.browser, m, g) },

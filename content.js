@@ -16,6 +16,7 @@
 
   const DEBUG_LIMIT = 800;
   const EMAIL_LIMIT = 2000;
+  const USED_EMAILS_LIMIT = 5000;
   const RESUME_SETTLE_MS = 3000;
   const POST_CLOSE_SETTLE_MS = 800;
 
@@ -33,7 +34,12 @@
     debug: true
   };
 
-  const DEFAULT_PROGRESS = { usedLines: [], cycleCount: 0, lastUA: null };
+  const DEFAULT_PROGRESS = {
+    usedLines: [],
+    cycleCount: 0,
+    lastUA: null,
+    usedEmails: []
+  };
 
   const state = {
     running: false,
@@ -157,27 +163,314 @@
     } catch { return "en"; }
   }
 
+  // ============================================================
+  // Email generation
+  // ============================================================
+
   const EMAIL_PREFIXES = [
     "user", "usr", "mail", "inbox", "contact", "acc", "account",
     "member", "reg", "signup", "hello", "info", "no-reply", "support",
     "help", "admin", "team", "office", "client", "guest"
   ];
 
-  const EMAIL_DOMAINS = [
-    "gmail.com", "hotmail.com", "yahoo.com", "outlook.com", "icloud.com",
-    "aol.com", "mail.ru", "bk.ru", "list.ru", "inbox.ru", "yandex.ru",
-    "ya.ru", "qq.com", "web.de", "gmx.net", "rambler.ru", "me.com",
-    "mac.com", "atomicmail.io", "proton.me", "protonmail.com"
+  // Западные имена/фамилии (транслит латиницей).
+  const WESTERN_FIRST_M = [
+    "james","john","robert","michael","william","david","richard","joseph","thomas","charles",
+    "christopher","daniel","matthew","anthony","mark","donald","steven","paul","andrew","joshua",
+    "kenneth","kevin","brian","george","timothy","ronald","jason","edward","jeffrey","ryan",
+    "jacob","gary","nicholas","eric","jonathan","stephen","larry","justin","scott","brandon",
+    "benjamin","samuel","raymond","gregory","frank","alexander","patrick","jack","dennis","jerry",
+    "tyler","aaron","jose","adam","nathan","henry","douglas","zachary","peter","kyle",
+    "noah","ethan","jeremy","walter","christian","keith","roger","terry","gerald","harold",
+    "sean","austin","carl","arthur","lawrence","dylan","jesse","jordan","bryan","billy",
+    "bruce","gabriel","logan","albert","willie","alan","juan","wayne","elijah","randy",
+    "roy","vincent","ralph","eugene","russell","bobby","mason","philip","louis","harry",
+    "liam","lucas","oliver","leo","max","owen","caleb","isaac","connor","luke",
+    "wyatt","hudson","asher","carter","hunter","evan","nolan","axel"
+  ];
+  const WESTERN_FIRST_F = [
+    "mary","patricia","jennifer","linda","elizabeth","barbara","susan","jessica","sarah","karen",
+    "nancy","lisa","betty","margaret","sandra","ashley","kimberly","emily","donna","michelle",
+    "carol","amanda","dorothy","melissa","deborah","stephanie","rebecca","sharon","laura","cynthia",
+    "kathleen","amy","angela","shirley","anna","brenda","pamela","emma","nicole","helen",
+    "samantha","katherine","christine","debra","rachel","carolyn","janet","catherine","maria","heather",
+    "diane","ruth","julie","olivia","joyce","virginia","victoria","kelly","lauren","christina",
+    "joan","evelyn","judith","megan","cheryl","andrea","hannah","martha","jacqueline","frances",
+    "gloria","ann","teresa","kathryn","sara","janice","jean","alice","madison","doris",
+    "abigail","julia","judy","grace","denise","amber","marilyn","beverly","danielle","theresa",
+    "sophia","marie","diana","brittany","natalie","isabella","charlotte","rose","alexis","kayla",
+    "mia","chloe","ella","ava","lily","zoe","nora","ruby","stella","violet",
+    "aurora","hazel","layla","scarlett","aria","ellie","audrey","claire","skylar","lucy"
+  ];
+  const WESTERN_LAST = [
+    "smith","johnson","williams","brown","jones","garcia","miller","davis","rodriguez","martinez",
+    "hernandez","lopez","gonzalez","wilson","anderson","thomas","taylor","moore","jackson","martin",
+    "lee","perez","thompson","white","harris","sanchez","clark","ramirez","lewis","robinson",
+    "walker","young","allen","king","wright","scott","torres","nguyen","hill","flores",
+    "green","adams","nelson","baker","hall","rivera","campbell","mitchell","carter","roberts",
+    "gomez","phillips","evans","turner","diaz","parker","cruz","edwards","collins","reyes",
+    "stewart","morris","morales","murphy","cook","rogers","gutierrez","ortiz","morgan","cooper",
+    "peterson","bailey","reed","kelly","howard","ramos","kim","cox","ward","richardson",
+    "watson","brooks","chavez","wood","james","bennett","gray","mendoza","ruiz","hughes",
+    "price","alvarez","castillo","sanders","patel","myers","long","ross","foster","jimenez",
+    "powell","jenkins","perry","russell","sullivan","bell","coleman","butler","henderson","barnes",
+    "gonzales","fisher","vasquez","simmons","romero","jordan","patterson","alexander","hamilton",
+    "graham","reynolds","griffin","wallace","moreno","west","cole","hayes","bryant","herrera",
+    "gibson","ellis","tran","medina","aguilar","stevens","murray","ford","castro","marshall"
   ];
 
-  function randomEmail() {
-    const prefix = EMAIL_PREFIXES[Math.floor(Math.random() * EMAIL_PREFIXES.length)];
-    const sep = Math.random() < 0.5 ? "_" : "";
-    const len = rand(5, 8);
-    const suffix = Math.random().toString(36).slice(2, 2 + len);
-    const domain = EMAIL_DOMAINS[Math.floor(Math.random() * EMAIL_DOMAINS.length)];
-    return `${prefix}${sep}${suffix}@${domain}`;
+  // Русские имена/фамилии — транслит латиницей (для mail.ru/yandex/gmail и др.).
+  const RU_FIRST_M = [
+    "aleksandr","alexander","aleksey","andrey","anton","arkadiy","artem","artyom","bogdan","boris",
+    "vadim","valentin","valeriy","vasiliy","viktor","vitaliy","vladimir","vladislav","vsevolod","vyacheslav",
+    "gennadiy","georgiy","german","gleb","grigoriy","daniil","denis","dmitriy","evgeniy","egor",
+    "ilya","igor","ivan","kirill","konstantin","lev","leonid","maksim","maxim","marat",
+    "mark","matvey","mikhail","nikita","nikolay","oleg","pavel","petr","platon","rinat",
+    "rodion","roman","rostislav","ruslan","saveliy","semyon","sergey","stanislav","stepan","timofey",
+    "timur","trofim","fedor","filipp","eduard","yuriy","yaroslav","arseniy","artur","david",
+    "demid","innokentiy","luka","miroslav","prokhor","savva","taras","vasil","zahar","zakhar",
+    "afanasiy","anatoliy","sasha","sanya"
+  ];
+  const RU_FIRST_F = [
+    "aleksandra","alena","alina","alla","anastasiya","anna","antonina","valentina","valeriya","varvara",
+    "vasilisa","vera","veronika","viktoriya","vladislava","galina","darya","daria","diana","evgeniya",
+    "ekaterina","elena","elizaveta","zhanna","zinaida","zoya","inna","irina","karina","ksenia",
+    "larisa","lidiya","liliya","lyubov","lyudmila","margarita","marina","mariya","nadezhda","natalya",
+    "nina","oksana","olga","polina","raisa","regina","svetlana","sofia","sofya","stanislava",
+    "taisiya","tatyana","ulyana","yuliya","yana","anzhelika","venera","dina","eva","zara",
+    "zarina","ilona","inga","kamila","kristina","lada","laura","leyla","milana","mila",
+    "neonila","nika","nonna","pelageya","rada","renata","ruslana","sabina","tamara","tina",
+    "uzlana","fatima","faina","flora","edita","elvira","emma","yulianna","vasilina","agniya",
+    "arkadiya","bella","sasha"
+  ];
+  const RU_LAST_M = [
+    "ivanov","smirnov","kuznetsov","popov","vasiliev","petrov","sokolov","mikhailov","novikov","fedorov",
+    "morozov","volkov","alekseev","lebedev","semenov","egorov","pavlov","kozlov","stepanov","nikolaev",
+    "orlov","andreev","makarov","nikitin","zakharov","zaitsev","soloviev","borisov","yakovlev","grigoriev",
+    "romanov","vorobyov","sergeev","kiselev","kuzmin","maksimov","isaev","tikhonov","gusev","bogdanov",
+    "belyaev","komarov","frolov","krylov","nikiforov","matveev","dmitriev","kudryavtsev","baranov","kulikov",
+    "sorokin","medvedev","ermolaev","mironov","tarasov","belov","komissarov","melnikov","shcherbakov","blinov",
+    "kolesnikov","markov","suvorov","muravyov","zuev","sidorov","shubin","karpov","afanasev","biryukov",
+    "vinogradov","grishin","drozdov","ershov","kalinin","kondratev","lavrentev","maltsev","maslov","moiseev",
+    "polyakov","safonov","sharapov","shirokov","shishkin","gorshkov","golubev","denisov","egorov","iljin",
+    "karpov","kiselev","korneev","kotov","kruglov","kudryashov","lavrov","litvinov","lobanov","lukin",
+    "mironov","nikiforov","nikolaev","nosov","ovchinnikov","panov","pavlov","petukhov","pimenov","polyakov",
+    "rodionov","rusakov","safronov","samsonov","savin","sazonov","seliverstov","shestakov","shilov","shubin"
+  ];
+  const RU_LAST_F = RU_LAST_M.map((n) => n + "a");
+
+  // Китайские (пиньинь).
+  const CN_FIRST = [
+    "wei","fang","jing","min","jun","yan","hao","lei","qiang","jie","yu","yang","bo","kai","hui",
+    "ling","na","xia","qing","hua","xiao","bing","chao","long","peng","fei","gang","tao","xin","zhe",
+    "xin","yi","yuan","hao","ming","hui","yue","rui","ting","chen"
+  ];
+  const CN_LAST = [
+    "wang","li","zhang","liu","chen","yang","huang","zhao","wu","zhou","xu","sun","ma","zhu","hu",
+    "guo","he","gao","lin","luo","zheng","liang","xie","song","tang","han","feng","deng","cao","peng",
+    "zeng","xiao","tian","dong","yuan","pan","yu","du","jiang","cai"
+  ];
+
+  // Веса доменов по группе имени.
+  // Gmail присутствует во всех трёх группах — это глобальная почта,
+  // и русские имена на @gmail.com абсолютно нормальны.
+  const DOMAIN_WEIGHTS = {
+    west: [
+      { domain: "gmail.com",      weight: 50 },
+      { domain: "outlook.com",    weight: 10 },
+      { domain: "hotmail.com",    weight: 8  },
+      { domain: "yahoo.com",      weight: 8  },
+      { domain: "icloud.com",     weight: 7  },
+      { domain: "proton.me",      weight: 4  },
+      { domain: "protonmail.com", weight: 2  },
+      { domain: "aol.com",        weight: 2  },
+      { domain: "gmx.net",        weight: 2  },
+      { domain: "web.de",         weight: 2  },
+      { domain: "me.com",         weight: 2  },
+      { domain: "mac.com",        weight: 1  },
+      { domain: "atomicmail.io",  weight: 1  }
+    ],
+    ru: [
+      { domain: "gmail.com",  weight: 28 },
+      { domain: "mail.ru",    weight: 22 },
+      { domain: "yandex.ru",  weight: 18 },
+      { domain: "bk.ru",      weight: 8  },
+      { domain: "list.ru",    weight: 6  },
+      { domain: "inbox.ru",   weight: 5  },
+      { domain: "ya.ru",      weight: 4  },
+      { domain: "rambler.ru", weight: 3  },
+      { domain: "icloud.com", weight: 2  },
+      { domain: "outlook.com",weight: 2  },
+      { domain: "proton.me",  weight: 1  },
+      { domain: "hotmail.com",weight: 1  }
+    ],
+    cn: [
+      { domain: "qq.com",      weight: 65 },
+      { domain: "gmail.com",   weight: 25 },
+      { domain: "outlook.com", weight: 5  },
+      { domain: "proton.me",   weight: 5  }
+    ]
+  };
+
+  let usedEmailsSet = new Set();
+
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  function pickNameGroup() {
+    const r = Math.random();
+    if (r < 0.50) return "ru";     // русские имена (в т.ч. на gmail)
+    if (r < 0.95) return "west";   // западные
+    return "cn";                    // китайские
   }
+
+  function pickNames(group) {
+    if (group === "ru") {
+      const isM = Math.random() < 0.5;
+      return {
+        first: pick(isM ? RU_FIRST_M : RU_FIRST_F),
+        last:  pick(isM ? RU_LAST_M  : RU_LAST_F)
+      };
+    }
+    if (group === "cn") {
+      return { first: pick(CN_FIRST), last: pick(CN_LAST) };
+    }
+    const isM = Math.random() < 0.5;
+    return {
+      first: pick(isM ? WESTERN_FIRST_M : WESTERN_FIRST_F),
+      last:  pick(WESTERN_LAST)
+    };
+  }
+
+  function pickDomain(group) {
+    const list = DOMAIN_WEIGHTS[group] || DOMAIN_WEIGHTS.west;
+    const total = list.reduce((s, x) => s + x.weight, 0);
+    let r = Math.random() * total;
+    for (const { domain, weight } of list) {
+      if (r < weight) return domain;
+      r -= weight;
+    }
+    return list[list.length - 1].domain;
+  }
+
+  function buildLocalPart(group) {
+    const { first, last } = pickNames(group);
+    const f = first, l = last;
+    const fi = f[0], li = l[0];
+
+    // Год рождения: со сдвигом в молодой диапазон.
+    const y4 = (() => {
+      const r = Math.random();
+      if (r < 0.55) return rand(1990, 2008);
+      if (r < 0.82) return rand(1970, 1989);
+      if (r < 0.94) return rand(1950, 1969);
+      if (r < 0.99) return rand(2009, 2013);
+      return rand(1940, 1949);
+    })();
+    const y2s = String(y4 % 100).padStart(2, "0");
+    const n2  = rand(10, 99);
+    const n3  = rand(100, 999);
+    const n4  = rand(1000, 9999);
+    const bizPrefix = pick(EMAIL_PREFIXES);
+
+    const variants = [
+      // чистое имя + фамилия
+      `${f}.${l}`,
+      `${f}_${l}`,
+      `${f}${l}`,
+      `${l}.${f}`,
+      `${l}_${f}`,
+      `${l}${f}`,
+      `${fi}.${l}`,
+      `${fi}${l}`,
+      `${fi}_${l}`,
+      `${f}.${li}`,
+      `${f}${li}`,
+      `${f}_${li}`,
+      `${fi}${li}`,
+      `${fi}.${li}`,
+
+      // с 4-значным годом
+      `${f}.${l}${y4}`,
+      `${f}${l}${y4}`,
+      `${f}_${l}_${y4}`,
+      `${f}.${l}.${y4}`,
+      `${l}${f}${y4}`,
+      `${f}${li}${y4}`,
+      `${fi}${l}${y4}`,
+      `${f}${y4}`,
+      `${l}${y4}`,
+
+      // с 2-значным годом
+      `${f}${l}${y2s}`,
+      `${f}.${l}${y2s}`,
+      `${f}_${l}_${y2s}`,
+      `${f}${y2s}`,
+      `${l}${y2s}`,
+      `${fi}${l}${y2s}`,
+      `${fi}${li}${y2s}`,
+
+      // с коротким числом
+      `${f}.${l}${n2}`,
+      `${f}${l}${n2}`,
+      `${f}_${l}${n2}`,
+      `${f}${n2}`,
+      `${l}${n2}`,
+      `${fi}${li}${n2}`,
+
+      // с 3-значным числом
+      `${f}.${l}${n3}`,
+      `${f}${l}${n3}`,
+      `${f}${n3}`,
+      `${f}_${n3}`,
+      `${fi}${l}${n3}`,
+
+      // с 4-значным числом (не год — просто «не заняли имя»)
+      `${f}.${l}${n4}`,
+      `${f}${l}${n4}`,
+      `${f}${n4}`,
+
+      // «бизнес»-стиль
+      `${bizPrefix}${n3}`,
+      `${bizPrefix}${n4}`,
+      `${bizPrefix}_${n3}`,
+      `${bizPrefix}.${l}`,
+      `${bizPrefix}_${l}`
+    ];
+
+    return pick(variants);
+  }
+
+  function randomEmail() {
+    const group = pickNameGroup();
+    const domain = pickDomain(group);
+
+    let email = "";
+    for (let i = 0; i < 40; i++) {
+      const candidate = `${buildLocalPart(group)}@${domain}`;
+      if (!usedEmailsSet.has(candidate)) { email = candidate; break; }
+    }
+    if (!email) {
+      // Гарантия уникальности: длинный числовой хвост.
+      email = `${buildLocalPart(group)}${rand(10000, 99999)}@${domain}`;
+    }
+
+    usedEmailsSet.add(email);
+    if (!Array.isArray(state.progress.usedEmails)) state.progress.usedEmails = [];
+    state.progress.usedEmails.push(email);
+    if (state.progress.usedEmails.length > USED_EMAILS_LIMIT) {
+      state.progress.usedEmails.splice(
+        0, state.progress.usedEmails.length - USED_EMAILS_LIMIT
+      );
+    }
+    persistSoon();
+
+    debugLog(`email: group=${group} domain=${domain} → ${email}`);
+    return email;
+  }
+
+  // ============================================================
+  // DOM helpers
+  // ============================================================
 
   const inPanel = (el) => !!(el && el.closest && el.closest("#" + PANEL_ID));
 
@@ -203,10 +496,30 @@
 
   async function loadAll() {
     try {
-      const data = await chrome.storage.local.get([K_SETTINGS, K_PROGRESS, K_POS, K_TARGET]);
+      const data = await chrome.storage.local.get(
+        [K_SETTINGS, K_PROGRESS, K_POS, K_TARGET, K_EMAILS]
+      );
       if (data[K_SETTINGS]) state.settings = { ...DEFAULT_SETTINGS, ...data[K_SETTINGS] };
       if (data[K_PROGRESS]) state.progress = { ...DEFAULT_PROGRESS, ...data[K_PROGRESS] };
       if (data[K_TARGET])   state.targetChannel = data[K_TARGET];
+
+      // Гидрируем usedEmailsSet из двух источников:
+      //   1) массив usedEmails в прогрессе (основной);
+      //   2) журнал K_EMAILS (страховка на случай сброса прогресса).
+      usedEmailsSet = new Set(
+        Array.isArray(state.progress.usedEmails) ? state.progress.usedEmails : []
+      );
+      const log = Array.isArray(data[K_EMAILS]) ? data[K_EMAILS] : [];
+      for (const rec of log) {
+        if (rec && typeof rec.email === "string") usedEmailsSet.add(rec.email);
+      }
+      state.progress.usedEmails = Array.from(usedEmailsSet);
+      if (state.progress.usedEmails.length > USED_EMAILS_LIMIT) {
+        state.progress.usedEmails.splice(
+          0, state.progress.usedEmails.length - USED_EMAILS_LIMIT
+        );
+      }
+      debugLog(`loadAll: ${usedEmailsSet.size} used email(s) hydrated`);
     } catch (e) { warn("loadAll failed", e); }
   }
 
@@ -1051,9 +1364,6 @@
             return resolve(null);
           }
           if (resp && resp.ok && resp.ua) {
-            // ИСПРАВЛЕНИЕ: приоритет Edg/ над Chrome/ в UA Edge
-            // (Chromium-токен "Chrome/X.0.0.0" идёт первым и раньше
-            // матчился вместо реальной версии Edge).
             let tail = resp.ua.match(/Edg\/[\d.]+/);
             if (!tail) tail = resp.ua.match(/(Chrome|Firefox)\/[\d.]+/);
             debugLog("UA rotated: " + (tail ? "…" + tail[0] : "…" + resp.ua.slice(-30)));
@@ -1740,10 +2050,11 @@
     resetCycBtn.addEventListener("click", async () => {
       state.progress.cycleCount = 0;
       state.progress.usedLines = [];
+      // usedEmails НЕ сбрасываем — уникальность email сохраняется между прогонами.
       await persistNow();
       updateProgressUI();
       setStatus("cycle counter reset", "ok");
-      debugLog("cycle counter reset");
+      debugLog("cycle counter reset (usedEmails preserved)");
     });
 
     dashBtn.addEventListener("click", () => {
