@@ -1,18 +1,10 @@
-// ============================================================
-// TS-Reporter — Background Service Worker (unified, incognito-only)
-// ============================================================
-// Требует: "incognito": "split", permissions: storage/tabs/
-// notifications/declarativeNetRequest, host_permissions twitch.tv
-// ============================================================
-
 const INCOGNITO_ONLY = true;
 const RULE_ID_MAIN = 9001;
-const RULE_ID_DEFAULT = 9010;  // Нейтральный DNR-профиль (en-US) после завершения циклов
+const RULE_ID_DEFAULT = 9010;
 const LEGACY_IDS   = [9001, 9002, 9003, 9004, 9005];
 const SETTINGS_KEY = "tsr_settings_v1";
 const RATE_KEY     = "tsr_rate_v2";
 const PROGRESS_KEY = "tsr_progress_v1";
-const DEBUG_KEY    = "tsr_debug_v1";
 const EMAILS_KEY   = "tsr_emails_v1";
 const RESUME_KEY   = "tsr_resume_v1";
 const PROFILE_KEY  = "tsr_profile_v1";
@@ -32,26 +24,12 @@ const SPOOF_DOMAINS = [
 ];
 
 const LANG_POOL = [
-  { code: "en-US", tag: "en-US,en;q=0.9",            list: ["en-US", "en"] },
-  { code: "en-GB", tag: "en-GB,en;q=0.9",            list: ["en-GB", "en"] },
-  { code: "de-DE", tag: "de-DE,de;q=0.9,en;q=0.8",   list: ["de-DE", "de", "en"] },
-  { code: "fr-FR", tag: "fr-FR,fr;q=0.9,en;q=0.8",   list: ["fr-FR", "fr", "en"] },
-  { code: "es-ES", tag: "es-ES,es;q=0.9,en;q=0.8",   list: ["es-ES", "es", "en"] }
+  { code: "en-US", tag: "en-US,en;q=0.9",            list: ["en-US", "en"],             tz: "America/New_York" },
+  { code: "en-GB", tag: "en-GB,en;q=0.9",            list: ["en-GB", "en"],             tz: "Europe/London" },
+  { code: "de-DE", tag: "de-DE,de;q=0.9,en;q=0.8",   list: ["de-DE", "de", "en"],       tz: "Europe/Berlin" },
+  { code: "fr-FR", tag: "fr-FR,fr;q=0.9,en;q=0.8",   list: ["fr-FR", "fr", "en"],       tz: "Europe/Paris" },
+  { code: "es-ES", tag: "es-ES,es;q=0.9,en;q=0.8",   list: ["es-ES", "es", "en"],       tz: "Europe/Madrid" }
 ];
-
-let debugEnabled = false;
-async function loadDebugSetting() {
-  try {
-    const d = await chrome.storage.local.get(SETTINGS_KEY);
-    debugEnabled = (d[SETTINGS_KEY] || {}).debug !== false;
-  } catch { debugEnabled = false; }
-}
-loadDebugSetting();
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes[SETTINGS_KEY]) return;
-  debugEnabled = (changes[SETTINGS_KEY].newValue || {}).debug !== false;
-});
-function log(...args) { if (debugEnabled) console.log("[TS-Reporter/BG]", ...args); }
 
 function isIncognitoContext() {
   try { return chrome.extension.inIncognitoContext === true; } catch { return false; }
@@ -60,400 +38,224 @@ function isIncognitoSender(sender) {
   return sender?.tab?.incognito === true || isIncognitoContext();
 }
 
-// ------------------------------------------------------------
-// Пул профилей (актуально на октябрь 2026)
-// ------------------------------------------------------------
 const PROFILES = [
-  // ===== Chrome 156 (stable, Oct 2026) =====
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "156.0.8078.47", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "156.0.8078.48", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.48 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "macOS", mobile: false,
-    version: "156.0.8078.47", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Linux", mobile: false,
-    version: "156.0.8078.47", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
-  },
-
-  // ===== Chrome 155 (stable, Oct 2026) =====
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "155.0.8059.84", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "155.0.8059.85", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.85 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "macOS", mobile: false,
-    version: "155.0.8059.84", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Linux", mobile: false,
-    version: "155.0.8059.84", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
-  },
-
-  // ===== Chrome 154 (stable, Sep 2026) =====
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "154.0.8037.92", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "154.0.8037.93", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.93 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "macOS", mobile: false,
-    version: "154.0.8037.92", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Linux", mobile: false,
-    version: "154.0.8037.92", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
-  },
-
-  // ===== Chrome 150 (stable, Jul 2026) =====
-  {
-    browser: "chrome", platform: "Windows", mobile: false,
-    version: "150.0.7742.92", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "macOS", mobile: false,
-    version: "150.0.7742.92", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
-  },
-  {
-    browser: "chrome", platform: "Linux", mobile: false,
-    version: "150.0.7742.92", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
-  },
-
-  // ===== Brave 156 (Chromium 156, Oct 2026) =====
-  {
-    browser: "brave", platform: "Windows", mobile: false,
-    version: "156.0.8078.47", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
-  },
-  {
-    browser: "brave", platform: "macOS", mobile: false,
-    version: "156.0.8078.47", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
-  },
-  {
-    browser: "brave", platform: "Linux", mobile: false,
-    version: "156.0.8078.47", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36"
-  },
-
-  // ===== Brave 155 (Chromium 155, Oct 2026) =====
-  {
-    browser: "brave", platform: "Windows", mobile: false,
-    version: "155.0.8059.84", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
-  },
-  {
-    browser: "brave", platform: "macOS", mobile: false,
-    version: "155.0.8059.84", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
-  },
-  {
-    browser: "brave", platform: "Linux", mobile: false,
-    version: "155.0.8059.84", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36"
-  },
-
-  // ===== Brave 154 (Chromium 154, Sep 2026) =====
-  {
-    browser: "brave", platform: "Windows", mobile: false,
-    version: "154.0.8037.92", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
-  },
-  {
-    browser: "brave", platform: "macOS", mobile: false,
-    version: "154.0.8037.92", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
-  },
-  {
-    browser: "brave", platform: "Linux", mobile: false,
-    version: "154.0.8037.92", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36"
-  },
-
-  // ===== Brave 150 (Chromium 150, Jul 2026) =====
-  {
-    browser: "brave", platform: "Windows", mobile: false,
-    version: "150.0.7742.92", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
-  },
-  {
-    browser: "brave", platform: "macOS", mobile: false,
-    version: "150.0.7742.92", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
-  },
-  {
-    browser: "brave", platform: "Linux", mobile: false,
-    version: "150.0.7742.92", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36"
-  },
-
-  // ===== Firefox 158 (stable, Oct 2026) =====
-  {
-    browser: "firefox", platform: "Windows", mobile: false,
-    version: "158.0", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0"
-  },
-  {
-    browser: "firefox", platform: "macOS", mobile: false,
-    version: "158.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:158.0) Gecko/20100101 Firefox/158.0"
-  },
-  {
-    browser: "firefox", platform: "Linux", mobile: false,
-    version: "158.0", ua:
-    "Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0"
-  },
-
-  // ===== Firefox 157 (stable, Sep 2026) =====
-  {
-    browser: "firefox", platform: "Windows", mobile: false,
-    version: "157.0", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:157.0) Gecko/20100101 Firefox/157.0"
-  },
-  {
-    browser: "firefox", platform: "macOS", mobile: false,
-    version: "157.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:157.0) Gecko/20100101 Firefox/157.0"
-  },
-  {
-    browser: "firefox", platform: "Linux", mobile: false,
-    version: "157.0", ua:
-    "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0"
-  },
-
-  // ===== Firefox 156 (stable, Sep 2026) =====
-  {
-    browser: "firefox", platform: "Windows", mobile: false,
-    version: "156.0", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) Gecko/20100101 Firefox/156.0"
-  },
-  {
-    browser: "firefox", platform: "macOS", mobile: false,
-    version: "156.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:156.0) Gecko/20100101 Firefox/156.0"
-  },
-  {
-    browser: "firefox", platform: "Linux", mobile: false,
-    version: "156.0", ua:
-    "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0"
-  },
-
-  // ===== Firefox 155 (stable, Sep 2026) =====
-  {
-    browser: "firefox", platform: "Windows", mobile: false,
-    version: "155.0", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0"
-  },
-  {
-    browser: "firefox", platform: "macOS", mobile: false,
-    version: "155.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:155.0) Gecko/20100101 Firefox/155.0"
-  },
-  {
-    browser: "firefox", platform: "Linux", mobile: false,
-    version: "155.0", ua:
-    "Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0"
-  },
-
-  // ===== Firefox 154 (stable, Aug 2026) =====
-  {
-    browser: "firefox", platform: "Windows", mobile: false,
-    version: "154.0", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0"
-  },
-  {
-    browser: "firefox", platform: "macOS", mobile: false,
-    version: "154.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:154.0) Gecko/20100101 Firefox/154.0"
-  },
-  {
-    browser: "firefox", platform: "Linux", mobile: false,
-    version: "154.0", ua:
-    "Mozilla/5.0 (X11; Linux x86_64; rv:154.0) Gecko/20100101 Firefox/154.0"
-  },
-
-  // ===== Firefox 153 (stable, Aug 2026) =====
-  {
-    browser: "firefox", platform: "Windows", mobile: false,
-    version: "153.0", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0"
-  },
-  {
-    browser: "firefox", platform: "macOS", mobile: false,
-    version: "153.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:153.0) Gecko/20100101 Firefox/153.0"
-  },
-  {
-    browser: "firefox", platform: "Linux", mobile: false,
-    version: "153.0", ua:
-    "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0"
-  },
-
-  // ===== Safari 27.0 (macOS, Sep 2026) =====
-  {
-    browser: "safari", platform: "macOS", mobile: false,
-    version: "27.0", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15"
-  },
-
-  // ===== Safari 26.6 (macOS, Jul 2026) =====
-  {
-    browser: "safari", platform: "macOS", mobile: false,
-    version: "26.6", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15"
-  },
-
-  // ===== Safari 26.5 (macOS, May 2026) =====
-  {
-    browser: "safari", platform: "macOS", mobile: false,
-    version: "26.5", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15"
-  },
-
-  // ===== Safari 26.4 (macOS, Mar 2026) =====
-  {
-    browser: "safari", platform: "macOS", mobile: false,
-    version: "26.4", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15"
-  },
-
-  // ===== Safari 26.3 (macOS, Feb 2026) =====
-  {
-    browser: "safari", platform: "macOS", mobile: false,
-    version: "26.3", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15"
-  },
-
-  // ===== Microsoft Edge 156 (stable, Oct 2026) =====
-  {
-    browser: "edge", platform: "Windows", mobile: false,
-    version: "156.0.4314.42", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42"
-  },
-  {
-    browser: "edge", platform: "macOS", mobile: false,
-    version: "156.0.4314.42", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42"
-  },
-  {
-    browser: "edge", platform: "Linux", mobile: false,
-    version: "156.0.4314.42", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42"
-  },
-
-  // ===== Microsoft Edge 155 (stable, Oct 2026) =====
-  {
-    browser: "edge", platform: "Windows", mobile: false,
-    version: "155.0.4283.62", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62"
-  },
-  {
-    browser: "edge", platform: "macOS", mobile: false,
-    version: "155.0.4283.62", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62"
-  },
-  {
-    browser: "edge", platform: "Linux", mobile: false,
-    version: "155.0.4283.62", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62"
-  },
-
-  // ===== Microsoft Edge 154 (stable, Sep 2026) =====
-  {
-    browser: "edge", platform: "Windows", mobile: false,
-    version: "154.0.4258.62", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62"
-  },
-  {
-    browser: "edge", platform: "macOS", mobile: false,
-    version: "154.0.4258.62", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62"
-  },
-  {
-    browser: "edge", platform: "Linux", mobile: false,
-    version: "154.0.4258.62", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62"
-  },
-
-  // ===== Microsoft Edge 153 (stable, Sep 2026) =====
-  {
-    browser: "edge", platform: "Windows", mobile: false,
-    version: "153.0.4234.48", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48"
-  },
-  {
-    browser: "edge", platform: "macOS", mobile: false,
-    version: "153.0.4234.48", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48"
-  },
-  {
-    browser: "edge", platform: "Linux", mobile: false,
-    version: "153.0.4234.48", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48"
-  },
-
-  // ===== Microsoft Edge 152 (stable, Sep 2026) =====
-  {
-    browser: "edge", platform: "Windows", mobile: false,
-    version: "152.0.4191.66", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66"
-  },
-  {
-    browser: "edge", platform: "macOS", mobile: false,
-    version: "152.0.4191.66", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66"
-  },
-  {
-    browser: "edge", platform: "Linux", mobile: false,
-    version: "152.0.4191.66", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66"
-  },
-
-  // ===== Microsoft Edge 150 (stable, Jul 2026) =====
-  {
-    browser: "edge", platform: "Windows", mobile: false,
-    version: "150.0.4078.105", ua:
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105"
-  },
-  {
-    browser: "edge", platform: "macOS", mobile: false,
-    version: "150.0.4078.105", ua:
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105"
-  },
-  {
-    browser: "edge", platform: "Linux", mobile: false,
-    version: "150.0.4078.105", ua:
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105"
-  }
+  { browser: "chrome", platform: "Windows", mobile: false,
+    version: "156.0.8078.47",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
+  { browser: "chrome", platform: "Windows", mobile: false,
+    version: "156.0.8078.48",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.48 Safari/537.36" },
+  { browser: "chrome", platform: "macOS", mobile: false,
+    version: "156.0.8078.47",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
+  { browser: "chrome", platform: "Linux", mobile: false,
+    version: "156.0.8078.47",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
+  { browser: "chrome", platform: "Windows", mobile: false,
+    version: "155.0.8059.84",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
+  { browser: "chrome", platform: "Windows", mobile: false,
+    version: "155.0.8059.85",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.85 Safari/537.36" },
+  { browser: "chrome", platform: "macOS", mobile: false,
+    version: "155.0.8059.84",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
+  { browser: "chrome", platform: "Linux", mobile: false,
+    version: "155.0.8059.84",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
+  { browser: "chrome", platform: "Windows", mobile: false,
+    version: "154.0.8037.92",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
+  { browser: "chrome", platform: "Windows", mobile: false,
+    version: "154.0.8037.93",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.93 Safari/537.36" },
+  { browser: "chrome", platform: "macOS", mobile: false,
+    version: "154.0.8037.92",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
+  { browser: "chrome", platform: "Linux", mobile: false,
+    version: "154.0.8037.92",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
+  { browser: "chrome", platform: "Windows", mobile: false,
+    version: "150.0.7742.92",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
+  { browser: "chrome", platform: "macOS", mobile: false,
+    version: "150.0.7742.92",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
+  { browser: "chrome", platform: "Linux", mobile: false,
+    version: "150.0.7742.92",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
+  { browser: "brave", platform: "Windows", mobile: false,
+    version: "156.0.8078.47",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
+  { browser: "brave", platform: "macOS", mobile: false,
+    version: "156.0.8078.47",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
+  { browser: "brave", platform: "Linux", mobile: false,
+    version: "156.0.8078.47",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.47 Safari/537.36" },
+  { browser: "brave", platform: "Windows", mobile: false,
+    version: "155.0.8059.84",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
+  { browser: "brave", platform: "macOS", mobile: false,
+    version: "155.0.8059.84",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
+  { browser: "brave", platform: "Linux", mobile: false,
+    version: "155.0.8059.84",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.8059.84 Safari/537.36" },
+  { browser: "brave", platform: "Windows", mobile: false,
+    version: "154.0.8037.92",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
+  { browser: "brave", platform: "macOS", mobile: false,
+    version: "154.0.8037.92",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
+  { browser: "brave", platform: "Linux", mobile: false,
+    version: "154.0.8037.92",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.8037.92 Safari/537.36" },
+  { browser: "brave", platform: "Windows", mobile: false,
+    version: "150.0.7742.92",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
+  { browser: "brave", platform: "macOS", mobile: false,
+    version: "150.0.7742.92",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
+  { browser: "brave", platform: "Linux", mobile: false,
+    version: "150.0.7742.92",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7742.92 Safari/537.36" },
+  { browser: "firefox", platform: "Windows", mobile: false,
+    version: "158.0",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0" },
+  { browser: "firefox", platform: "macOS", mobile: false,
+    version: "158.0",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:158.0) Gecko/20100101 Firefox/158.0" },
+  { browser: "firefox", platform: "Linux", mobile: false,
+    version: "158.0",
+    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0" },
+  { browser: "firefox", platform: "Windows", mobile: false,
+    version: "157.0",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:157.0) Gecko/20100101 Firefox/157.0" },
+  { browser: "firefox", platform: "macOS", mobile: false,
+    version: "157.0",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:157.0) Gecko/20100101 Firefox/157.0" },
+  { browser: "firefox", platform: "Linux", mobile: false,
+    version: "157.0",
+    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0" },
+  { browser: "firefox", platform: "Windows", mobile: false,
+    version: "156.0",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:156.0) Gecko/20100101 Firefox/156.0" },
+  { browser: "firefox", platform: "macOS", mobile: false,
+    version: "156.0",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:156.0) Gecko/20100101 Firefox/156.0" },
+  { browser: "firefox", platform: "Linux", mobile: false,
+    version: "156.0",
+    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:156.0) Gecko/20100101 Firefox/156.0" },
+  { browser: "firefox", platform: "Windows", mobile: false,
+    version: "155.0",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:155.0) Gecko/20100101 Firefox/155.0" },
+  { browser: "firefox", platform: "macOS", mobile: false,
+    version: "155.0",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:155.0) Gecko/20100101 Firefox/155.0" },
+  { browser: "firefox", platform: "Linux", mobile: false,
+    version: "155.0",
+    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:155.0) Gecko/20100101 Firefox/155.0" },
+  { browser: "firefox", platform: "Windows", mobile: false,
+    version: "154.0",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0" },
+  { browser: "firefox", platform: "macOS", mobile: false,
+    version: "154.0",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:154.0) Gecko/20100101 Firefox/154.0" },
+  { browser: "firefox", platform: "Linux", mobile: false,
+    version: "154.0",
+    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:154.0) Gecko/20100101 Firefox/154.0" },
+  { browser: "firefox", platform: "Windows", mobile: false,
+    version: "153.0",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0" },
+  { browser: "firefox", platform: "macOS", mobile: false,
+    version: "153.0",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.8; rv:153.0) Gecko/20100101 Firefox/153.0" },
+  { browser: "firefox", platform: "Linux", mobile: false,
+    version: "153.0",
+    ua: "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0" },
+  { browser: "safari", platform: "macOS", mobile: false,
+    version: "27.0",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Safari/605.1.15" },
+  { browser: "safari", platform: "macOS", mobile: false,
+    version: "26.6",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Safari/605.1.15" },
+  { browser: "safari", platform: "macOS", mobile: false,
+    version: "26.5",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15" },
+  { browser: "safari", platform: "macOS", mobile: false,
+    version: "26.4",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Safari/605.1.15" },
+  { browser: "safari", platform: "macOS", mobile: false,
+    version: "26.3",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_8_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15" },
+  { browser: "edge", platform: "Windows", mobile: false,
+    version: "156.0.4314.42",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42" },
+  { browser: "edge", platform: "macOS", mobile: false,
+    version: "156.0.4314.42",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42" },
+  { browser: "edge", platform: "Linux", mobile: false,
+    version: "156.0.4314.42",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.4314.42" },
+  { browser: "edge", platform: "Windows", mobile: false,
+    version: "155.0.4283.62",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62" },
+  { browser: "edge", platform: "macOS", mobile: false,
+    version: "155.0.4283.62",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62" },
+  { browser: "edge", platform: "Linux", mobile: false,
+    version: "155.0.4283.62",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36 Edg/155.0.4283.62" },
+  { browser: "edge", platform: "Windows", mobile: false,
+    version: "154.0.4258.62",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62" },
+  { browser: "edge", platform: "macOS", mobile: false,
+    version: "154.0.4258.62",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62" },
+  { browser: "edge", platform: "Linux", mobile: false,
+    version: "154.0.4258.62",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.4258.62" },
+  { browser: "edge", platform: "Windows", mobile: false,
+    version: "153.0.4234.48",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48" },
+  { browser: "edge", platform: "macOS", mobile: false,
+    version: "153.0.4234.48",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48" },
+  { browser: "edge", platform: "Linux", mobile: false,
+    version: "153.0.4234.48",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.4234.48" },
+  { browser: "edge", platform: "Windows", mobile: false,
+    version: "152.0.4191.66",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66" },
+  { browser: "edge", platform: "macOS", mobile: false,
+    version: "152.0.4191.66",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66" },
+  { browser: "edge", platform: "Linux", mobile: false,
+    version: "152.0.4191.66",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.4191.66" },
+  { browser: "edge", platform: "Windows", mobile: false,
+    version: "150.0.4078.105",
+    ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105" },
+  { browser: "edge", platform: "macOS", mobile: false,
+    version: "150.0.4078.105",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105" },
+  { browser: "edge", platform: "Linux", mobile: false,
+    version: "150.0.4078.105",
+    ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.4078.105" }
 ];
+
+function randomSalt() {
+  const arr = new Uint32Array(1);
+  crypto.getRandomValues(arr);
+  return arr[0];
+}
+
+function reduceUA(ua, major) {
+  return ua
+    .replace(/Chrome\/[\d.]+/, `Chrome/${major}.0.0.0`)
+    .replace(/Edg\/[\d.]+/, `Edg/${major}.0.0.0`);
+}
 
 function enrichProfile(p) {
   const major = String(p.version).split(".")[0];
@@ -464,7 +266,7 @@ function enrichProfile(p) {
   const vendor =
     p.browser === "chrome" ? "Google Inc." :
     p.browser === "edge"   ? "Microsoft Corporation" :
-    p.browser === "brave"  ? "Google Inc." : // Brave сохраняет Google Inc. как vendor
+    p.browser === "brave"  ? "Google Inc." :
     p.browser === "safari" ? "Apple Computer, Inc." : "";
   const lang = LANG_POOL[(Math.random() * LANG_POOL.length) | 0];
   const hardwareConcurrency =
@@ -481,24 +283,36 @@ function enrichProfile(p) {
     p.platform === "macOS"   ? "15.8.0" :
     p.platform === "Linux"   ? "6.5.0" : "10.0.0";
 
+  const screenInfo =
+    p.platform === "Windows" ? { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, pixelRatio: 1 } :
+    p.platform === "macOS"   ? { width: 1440, height: 900, availWidth: 1440, availHeight: 875, colorDepth: 30, pixelRatio: 2 } :
+    p.platform === "Linux"   ? { width: 1920, height: 1080, availWidth: 1920, availHeight: 1055, colorDepth: 24, pixelRatio: 1 } :
+                               { width: 1920, height: 1080, availWidth: 1920, availHeight: 1040, colorDepth: 24, pixelRatio: 1 };
+
+  const reduced = (p.browser === "chrome" || p.browser === "edge" || p.browser === "brave")
+    ? reduceUA(p.ua, major)
+    : p.ua;
+
   const out = {
     browser: p.browser,
     platform: p.platform,
     mobile: !!p.mobile,
     version: p.version,
     major,
-    ua: p.ua,
-    appVersion: p.ua.replace(/^Mozilla\//, ""),
+    ua: reduced,
+    appVersion: reduced.replace(/^Mozilla\//, ""),
     platformName,
     vendor,
     languages: lang.list.slice(),
     acceptLanguage: lang.tag,
+    timezone: lang.tz,
     hardwareConcurrency,
     deviceMemory,
-    platformVersion
+    platformVersion,
+    screen: screenInfo,
+    salt: randomSalt()
   };
 
-  // ----- Chrome / Edge / Brave (Chromium-based) -----
   if (p.browser === "chrome" || p.browser === "edge" || p.browser === "brave") {
     let brandName;
     if (p.browser === "edge") brandName = "Microsoft Edge";
@@ -534,7 +348,7 @@ async function pickProfile() {
     try {
       const d = await chrome.storage.session.get(PROFILE_KEY);
       lastUa = d[PROFILE_KEY]?.ua || null;
-    } catch { /* ignore */ }
+    } catch {}
   }
   const pool = lastUa ? PROFILES.filter(p => p.ua !== lastUa) : PROFILES;
   const raw = pool[(Math.random() * pool.length) | 0];
@@ -549,7 +363,6 @@ function buildSecChUa(browser, major, grease) {
   if (browser === "brave") {
     return `"Chromium";v="${major}", "Brave";v="${major}", "Not(A:Brand";v="${grease}"`;
   }
-  // chrome (default)
   return `"Chromium";v="${major}", "Not(A:Brand";v="${grease}", "Google Chrome";v="${major}"`;
 }
 
@@ -560,7 +373,6 @@ function buildFullVersionList(browser, fullVersion, grease) {
   if (browser === "brave") {
     return `"Chromium";v="${fullVersion}", "Brave";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0"`;
   }
-  // chrome (default)
   return `"Chromium";v="${fullVersion}", "Not(A:Brand";v="${grease}.0.0.0", "Google Chrome";v="${fullVersion}"`;
 }
 
@@ -570,7 +382,6 @@ function buildRequestHeaders(profile) {
     { header: "accept-language", operation: "set", value: profile.acceptLanguage }
   ];
 
-  // Chromium-based браузеры (Chrome, Edge, Brave) отправляют Client Hints
   if (profile.browser === "chrome" || profile.browser === "edge" || profile.browser === "brave") {
     const v = profile.version, m = profile.major, g = 24;
     headers.push(
@@ -600,9 +411,6 @@ function buildRequestHeaders(profile) {
   return headers;
 }
 
-// Записывает профиль в localStorage страницы и рассылает postMessage
-// во все фреймы вкладки. Это нужно, потому что injected.js работает
-// в MAIN world и не имеет доступа к chrome.storage.
 async function syncProfileToTab(tabId, profile) {
   if (typeof tabId !== "number") return;
   try {
@@ -619,18 +427,13 @@ async function syncProfileToTab(tabId, profile) {
             localStorage.removeItem("__tsr_profile_v1");
             window.postMessage({ __tsr: 1, type: "CONFIG", profile: null }, "*");
           }
-        } catch { /* sandboxed frame */ }
+        } catch {}
       }
     });
-  } catch (e) {
-    // executeScript падает на sandboxed iframe без host-прав — это нормально
-    log("syncProfileToTab scripting failed", tabId, e?.message || String(e));
-  }
-  // Параллельно уведомляем isolated-world content script (isolated.js),
-  // который может иметь свою логику и переслать сообщение в injected.js.
+  } catch (e) {}
   try {
     chrome.tabs.sendMessage(tabId, { type: "PROFILE_UPDATED", profile }).catch(() => {});
-  } catch { /* ignore */ }
+  } catch {}
 }
 
 async function applyProfile(profile) {
@@ -652,9 +455,8 @@ async function applyProfile(profile) {
     addRules: rules
   });
 
-  try { await chrome.storage.session.set({ [PROFILE_KEY]: profile }); } catch { /* ignore */ }
+  try { await chrome.storage.session.set({ [PROFILE_KEY]: profile }); } catch {}
 
-  // Синхронизация со всеми фреймами во всех incognito-вкладках Twitch.
   try {
     const tabs = await chrome.tabs.query({});
     await Promise.all(
@@ -666,10 +468,7 @@ async function applyProfile(profile) {
         )
         .map(t => syncProfileToTab(t.id, profile))
     );
-  } catch (e) { log("profile broadcast failed", e); }
-
-  log("profile applied:", profile.browser, profile.major, profile.platform, "→", profile.version, profile.acceptLanguage,
-      "| hc:", profile.hardwareConcurrency, "dm:", profile.deviceMemory);
+  } catch {}
 }
 
 async function clearRules() {
@@ -677,8 +476,8 @@ async function clearRules() {
     await chrome.declarativeNetRequest.updateSessionRules({
       removeRuleIds: [RULE_ID_MAIN, RULE_ID_DEFAULT].concat(LEGACY_IDS)
     });
-  } catch (e) { log("clearSessionRules failed", e); }
-  try { await chrome.storage.session.remove(PROFILE_KEY); } catch { /* ignore */ }
+  } catch {}
+  try { await chrome.storage.session.remove(PROFILE_KEY); } catch {}
 
   try {
     const tabs = await chrome.tabs.query({});
@@ -691,12 +490,9 @@ async function clearRules() {
         )
         .map(t => syncProfileToTab(t.id, null))
     );
-  } catch { /* ignore */ }
+  } catch {}
 }
 
-// Нейтральный DNR-профиль (en-US) после завершения циклов.
-// Предотвращает «протекание» accept-language последнего спуф-профиля
-// на обычные страницы браузера.
 async function resetLanguageToEnglish() {
   try {
     const rule = {
@@ -714,12 +510,9 @@ async function resetLanguageToEnglish() {
       removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS),
       addRules: [rule]
     });
-  } catch (e) {
-    log("resetLanguageToEnglish: DNR update failed", e);
-    return;
-  }
+  } catch { return; }
 
-  try { await chrome.storage.session.remove(PROFILE_KEY); } catch { /* ignore */ }
+  try { await chrome.storage.session.remove(PROFILE_KEY); } catch {}
 
   try {
     const tabs = await chrome.tabs.query({});
@@ -732,16 +525,13 @@ async function resetLanguageToEnglish() {
         )
         .map(t => syncProfileToTab(t.id, null))
     );
-  } catch (e) { log("resetLanguageToEnglish: tab sync failed", e); }
-
-  log("resetLanguageToEnglish: DNR forced en-US; JS spoofing cleared");
+  } catch {}
 }
 
 async function migrateLegacyDynamicRules() {
   try {
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: LEGACY_IDS });
-    log("legacy dynamic rules cleared");
-  } catch (e) { log("legacy migration skipped", e); }
+  } catch {}
 }
 
 async function acquireReportToken() {
@@ -764,11 +554,6 @@ async function acquireReportToken() {
 }
 
 async function writeProgress(payload) { await chrome.storage.local.set({ [PROGRESS_KEY]: payload }); }
-async function appendDebug(line) {
-  const s = await chrome.storage.local.get(DEBUG_KEY);
-  const prev = s[DEBUG_KEY] || [];
-  await chrome.storage.local.set({ [DEBUG_KEY]: prev.concat(line).slice(-500) });
-}
 async function appendEmail(record) {
   const s = await chrome.storage.local.get(EMAILS_KEY);
   const prev = s[EMAILS_KEY] || [];
@@ -776,13 +561,13 @@ async function appendEmail(record) {
 }
 async function readState() {
   const data = await chrome.storage.local.get([
-    PROGRESS_KEY, DEBUG_KEY, EMAILS_KEY, RESUME_KEY, SETTINGS_KEY, RATE_KEY
+    PROGRESS_KEY, EMAILS_KEY, RESUME_KEY, SETTINGS_KEY, RATE_KEY
   ]);
   let profile = null;
   try {
     const sess = await chrome.storage.session.get(PROFILE_KEY);
     profile = sess[PROFILE_KEY] || null;
-  } catch { /* ignore */ }
+  } catch {}
   return { ...data, currentProfile: profile, rate: data[RATE_KEY] || null };
 }
 
@@ -796,7 +581,7 @@ function notify(title, message) {
       title: title || "TS-Reporter",
       message: message || ""
     });
-  } catch (e) { log("notifications.create failed", e); }
+  } catch {}
 }
 
 async function ensureSessionStorageAccess() {
@@ -804,9 +589,7 @@ async function ensureSessionStorageAccess() {
     await chrome.storage.session.setAccessLevel({
       accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS"
     });
-  } catch (e) {
-    log("setAccessLevel failed (content-script will fallback to message)", e);
-  }
+  } catch {}
 }
 
 async function bootstrap() {
@@ -817,9 +600,7 @@ async function bootstrap() {
       await chrome.declarativeNetRequest.updateSessionRules({
         removeRuleIds: [RULE_ID_MAIN].concat(LEGACY_IDS)
       });
-      log("normal-context: DNR session rules cleaned defensively");
-    } catch (e) { log("normal-context DNR cleanup failed", e); }
-    log("normal context — inactive");
+    } catch {}
     return;
   }
 
@@ -827,11 +608,10 @@ async function bootstrap() {
   try {
     const existing = await chrome.declarativeNetRequest.getSessionRules();
     const has = existing.some(r => r.id === RULE_ID_MAIN);
-    if (has) { log("rules already installed, skip"); return; }
+    if (has) return;
     const profile = await pickProfile();
     await applyProfile(profile);
-    log("bootstrapped:", profile.browser, profile.major);
-  } catch (e) { log("bootstrap failed", e); }
+  } catch {}
 }
 
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
@@ -840,15 +620,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   const url = tab.url || "";
   if (!/^https?:\/\/([^/]+\.)?twitch\.tv\//.test(url)) return;
 
-  // 1) Всегда синхронизируем текущий профиль в новую/перезагруженную вкладку.
   try {
     const sess = await chrome.storage.session.get(PROFILE_KEY);
     if (sess[PROFILE_KEY]) {
       await syncProfileToTab(tabId, sess[PROFILE_KEY]);
     }
-  } catch (e) { log("sync on tab update failed", e); }
+  } catch {}
 
-  // 2) Опциональная ротация.
   try {
     const s = await chrome.storage.local.get(ROT_KEY);
     const last = s[ROT_KEY] || 0;
@@ -857,8 +635,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
     const profile = await pickProfile();
     await applyProfile(profile);
     await chrome.storage.local.set({ [ROT_KEY]: Date.now() });
-    log("auto-rotated on nav:", profile.browser, profile.major);
-  } catch (e) { log("auto-rotate failed", e); }
+  } catch {}
 });
 
 chrome.webNavigation.onCommitted.addListener(async (details) => {
@@ -884,13 +661,10 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
         try {
           localStorage.setItem("__tsr_profile_v1", JSON.stringify(p));
           window.postMessage({ __tsr: 1, type: "CONFIG", profile: p }, "*");
-        } catch { /* sandboxed */ }
+        } catch {}
       }
     });
-    log("iframe profile synced", details.tabId, details.frameId);
-  } catch (e) {
-    log("iframe profile sync failed", details.tabId, details.frameId, e?.message || String(e));
-  }
+  } catch {}
 }, {
   url: [
     { hostSuffix: "twitch.tv" },
@@ -917,11 +691,9 @@ async function openDashboard(sender) {
   for (let i = 0; i < attempts.length; i++) {
     try {
       const t = await chrome.tabs.create(attempts[i]);
-      log("dashboard opened via tabs.create (attempt " + (i + 1) + ")", { tabId: t?.id, url });
       return { ok: true, tabId: t?.id, url };
     } catch (e) {
       lastErr = e;
-      log("tabs.create attempt " + (i + 1) + " failed:", e?.message || String(e));
     }
   }
 
@@ -929,10 +701,8 @@ async function openDashboard(sender) {
     const winOpts = { url, focused: true };
     if (isIncognitoContext()) winOpts.incognito = true;
     const w = await chrome.windows.create(winOpts);
-    log("dashboard opened via windows.create", { windowId: w?.id, url });
     return { ok: true, windowId: w?.id, url };
   } catch (e) {
-    log("windows.create failed:", e?.message || String(e));
     if (!lastErr) lastErr = e;
   }
 
@@ -957,7 +727,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "BG_LOG") {
-    log("from tab", sender?.tab?.id, msg.payload);
     sendResponse({ ok: true });
     return false;
   }
@@ -1002,7 +771,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const result = await openDashboard(sender);
           sendResponse(result);
         } catch (e) {
-          log("openDashboard fatal:", e?.message || String(e));
           sendResponse({ ok: false, error: String(e?.message || e) });
         }
       })();
@@ -1014,10 +782,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     case "WRITE_PROGRESS": {
       writeProgress(msg.payload).then(() => sendResponse({ ok: true }), e => sendResponse({ ok: false, error: String(e) }));
-      return true;
-    }
-    case "APPEND_DEBUG": {
-      appendDebug(msg.line).then(() => sendResponse({ ok: true }), e => sendResponse({ ok: false, error: String(e) }));
       return true;
     }
     case "APPEND_EMAIL": {
@@ -1033,16 +797,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-chrome.runtime.onInstalled.addListener(() => { log("installed"); bootstrap(); });
-chrome.runtime.onStartup.addListener(() => { log("startup"); bootstrap(); });
+chrome.runtime.onInstalled.addListener(() => { bootstrap(); });
+chrome.runtime.onStartup.addListener(() => { bootstrap(); });
 chrome.windows.onCreated.addListener((win) => {
-  log("window created", { id: win.id, incognito: win.incognito });
   if (win.incognito) bootstrap();
-  else bootstrap(); // defensive: run normal-context cleanup on new window too
+  else bootstrap();
 });
 
 (async () => {
-  await loadDebugSetting();
   await ensureSessionStorageAccess();
   await bootstrap();
 })();

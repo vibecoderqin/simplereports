@@ -1,5 +1,3 @@
-// content/injected.js — MAIN world, document_start
-// Патчи применяются последовательно во всех фреймах (all_frames: true).
 (() => {
   "use strict";
 
@@ -7,11 +5,10 @@
   const CFG = { profile: null };
   let uaDataCache = new WeakMap();
 
-  // ---------- загрузка профиля ----------
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) CFG.profile = JSON.parse(raw);
-  } catch { /* ignore */ }
+  } catch {}
 
   window.addEventListener("message", (ev) => {
     if (ev.source !== window) return;
@@ -31,7 +28,6 @@
     uaDataCache = new WeakMap();
   });
 
-  // ---------- tamper detection scaffolding ----------
   const _toString = Function.prototype.toString;
   const nativeLike = new WeakMap();
 
@@ -40,13 +36,11 @@
     return fn;
   }
 
-  // Устанавливает name/length как у нативной функции + регистрирует в nativeLike,
-  // чтобы Function.prototype.toString.call(patched) возвращал исходный код.
   function mimic(patched, nativeFn, name, length) {
     try {
-      Object.defineProperty(patched, "name",   { value: name,   configurable: true });
+      Object.defineProperty(patched, "name", { value: name, configurable: true });
       Object.defineProperty(patched, "length", { value: length, configurable: true });
-    } catch { /* ignore */ }
+    } catch {}
     const realNative = nativeLike.get(nativeFn) || nativeFn;
     return markNative(patched, realNative);
   }
@@ -57,19 +51,31 @@
       return orig ? _toString.call(orig) : _toString.call(this);
     };
     try {
-      Object.defineProperty(patchedToString, "name",   { value: "toString", configurable: true });
-      Object.defineProperty(patchedToString, "length", { value: 0,          configurable: true });
-    } catch { /* ignore */ }
+      Object.defineProperty(patchedToString, "name", { value: "toString", configurable: true });
+      Object.defineProperty(patchedToString, "length", { value: 0, configurable: true });
+    } catch {}
     markNative(patchedToString, _toString);
     Function.prototype.toString = patchedToString;
   }
 
   function safeDefine(obj, prop, descriptor) {
     try { Reflect.defineProperty(obj, prop, descriptor); }
-    catch { /* non-configurable */ }
+    catch {}
   }
 
-  // ---------- Navigator ----------
+  function profileSalt() {
+    return CFG.profile && typeof CFG.profile.salt === "number" ? CFG.profile.salt : 0;
+  }
+
+  function hash32(str) {
+    let h = (0x811c9dc5 ^ profileSalt()) | 0;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
+
   (function patchNavigator() {
     if (typeof Navigator === "undefined" || !Navigator.prototype) return;
     const NavProto = Navigator.prototype;
@@ -117,8 +123,43 @@
         ? CFG.profile.deviceMemory
         : orig.call(this);
     });
+    redefine("maxTouchPoints", (orig) => function () {
+      return CFG.profile ? 0 : orig.call(this);
+    });
 
-    // userAgentData
+    (function patchConnection() {
+      const desc = Object.getOwnPropertyDescriptor(NavProto, "connection");
+      if (!desc) return;
+
+      const NativeNC = window.NetworkInformation;
+      let cachedConn = null;
+
+      function getFakeConnection() {
+        if (cachedConn) return cachedConn;
+        let obj;
+        if (NativeNC && NativeNC.prototype) {
+          try { obj = Object.create(NativeNC.prototype); } catch { obj = {}; }
+        } else {
+          obj = {};
+        }
+        safeDefine(obj, "effectiveType", { value: "4g",    configurable: true, enumerable: true });
+        safeDefine(obj, "rtt",           { value: 50,      configurable: true, enumerable: true });
+        safeDefine(obj, "downlink",      { value: 10,      configurable: true, enumerable: true });
+        safeDefine(obj, "saveData",      { value: false,   configurable: true, enumerable: true });
+        safeDefine(obj, "type",          { value: "wifi",  configurable: true, enumerable: true });
+        safeDefine(obj, "onchange",      { value: null,    configurable: true, writable: true, enumerable: true });
+        cachedConn = obj;
+        return cachedConn;
+      }
+
+      redefine("connection", (origFn) => function () {
+        if (!CFG.profile) return origFn.call(this);
+        const b = CFG.profile.browser;
+        if (b === "firefox" || b === "safari") return undefined;
+        return getFakeConnection();
+      });
+    })();
+
     const uaDesc = Object.getOwnPropertyDescriptor(NavProto, "userAgentData");
     if (uaDesc && typeof uaDesc.get === "function") {
       const origGet = uaDesc.get;
@@ -140,83 +181,100 @@
         get: patched
       });
     }
-
-    const uaProfiles = new WeakMap();
-
-    class FakeNavigatorUAData {
-      constructor(profile) {
-        uaProfiles.set(this, profile);
-      }
-      get [Symbol.toStringTag]() { return "NavigatorUAData"; }
-      get brands() {
-        const p = uaProfiles.get(this);
-        const brands = ((p && p.uaBrands) || []).map(b =>
-          Object.freeze({ brand: b.brand, version: String(b.version) })
-        );
-        return Object.freeze(brands);
-      }
-      get mobile() {
-        const p = uaProfiles.get(this);
-        return !!(p && p.mobile);
-      }
-      get platform() {
-        const p = uaProfiles.get(this);
-        return p ? p.platform : "";
-      }
-      async getHighEntropyValues(hints) {
-        const p = uaProfiles.get(this) || {};
-        const want = new Set(Array.isArray(hints) ? hints : []);
-        const out = {
-          brands: this.brands,
-          mobile: this.mobile,
-          platform: this.platform
-        };
-        if (want.has("architecture")) out.architecture = "x86";
-        if (want.has("bitness")) out.bitness = "64";
-        if (want.has("formFactors")) out.formFactors = ["Desktop"];
-        if (want.has("model")) out.model = "";
-        if (want.has("platformVersion")) out.platformVersion = p.platformVersion || "10.0.0";
-        if (want.has("uaFullVersion")) out.uaFullVersion = p.version;
-        if (want.has("wow64")) out.wow64 = false;
-        if (want.has("fullVersionList")) {
-          out.fullVersionList = Object.freeze(
-            (p.fullVersionList || []).map(b =>
-              Object.freeze({ brand: b.brand, version: String(b.version) })
-            )
-          );
-        }
-        return out;
-      }
-      toJSON() {
-        return { brands: this.brands, mobile: this.mobile, platform: this.platform };
-      }
-    }
-
-    try {
-      Object.defineProperty(FakeNavigatorUAData, "name", {
-        value: "NavigatorUAData", configurable: true
-      });
-    } catch { /* ignore */ }
-
-    for (const k of ["getHighEntropyValues", "toJSON"]) {
-      const fn = FakeNavigatorUAData.prototype[k];
-      if (typeof fn === "function") {
-        try { Object.defineProperty(fn, "name", { value: k, configurable: true }); } catch {}
-        try { Object.defineProperty(fn, "length", { value: k === "toJSON" ? 0 : 1, configurable: true }); } catch {}
-      }
-    }
   })();
 
-  // ---------- Brave ----------
+  const NativeUAData = typeof window !== "undefined" ? window.NavigatorUAData : undefined;
+
+  function FakeNavigatorUAData(profile) {
+    this._profile = profile;
+    const brands = ((profile && profile.uaBrands) || []).map(b =>
+      Object.freeze({ brand: b.brand, version: String(b.version) })
+    );
+    Object.defineProperty(this, "_brands", {
+      value: Object.freeze(brands),
+      configurable: true
+    });
+  }
+
+  if (NativeUAData && NativeUAData.prototype) {
+    try { Object.setPrototypeOf(FakeNavigatorUAData.prototype, NativeUAData.prototype); } catch {}
+  }
+
+  Object.defineProperty(FakeNavigatorUAData.prototype, "brands", {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._brands; }
+  });
+  Object.defineProperty(FakeNavigatorUAData.prototype, "mobile", {
+    configurable: true,
+    enumerable: true,
+    get: function () { return !!(this._profile && this._profile.mobile); }
+  });
+  Object.defineProperty(FakeNavigatorUAData.prototype, "platform", {
+    configurable: true,
+    enumerable: true,
+    get: function () { return this._profile ? this._profile.platform : ""; }
+  });
+  Object.defineProperty(FakeNavigatorUAData.prototype, "getHighEntropyValues", {
+    configurable: true,
+    writable: true,
+    value: function (hints) {
+      const p = this._profile || {};
+      const want = new Set(Array.isArray(hints) ? hints : []);
+      const out = {
+        brands: this.brands,
+        mobile: this.mobile,
+        platform: this.platform
+      };
+      if (want.has("architecture")) out.architecture = "x86";
+      if (want.has("bitness")) out.bitness = "64";
+      if (want.has("formFactors")) out.formFactors = ["Desktop"];
+      if (want.has("model")) out.model = "";
+      if (want.has("platformVersion")) out.platformVersion = p.platformVersion || "10.0.0";
+      if (want.has("uaFullVersion")) out.uaFullVersion = p.version;
+      if (want.has("wow64")) out.wow64 = false;
+      if (want.has("fullVersionList")) {
+        out.fullVersionList = Object.freeze(
+          (p.fullVersionList || []).map(b =>
+            Object.freeze({ brand: b.brand, version: String(b.version) })
+          )
+        );
+      }
+      return Promise.resolve(out);
+    }
+  });
+  Object.defineProperty(FakeNavigatorUAData.prototype, "toJSON", {
+    configurable: true,
+    writable: true,
+    value: function () {
+      return { brands: this.brands, mobile: this.mobile, platform: this.platform };
+    }
+  });
+
+  if (NativeUAData && NativeUAData.prototype) {
+    const origHEV = NativeUAData.prototype.getHighEntropyValues;
+    const origJSON = NativeUAData.prototype.toJSON;
+    if (typeof origHEV === "function") {
+      markNative(FakeNavigatorUAData.prototype.getHighEntropyValues, origHEV);
+    }
+    if (typeof origJSON === "function") {
+      markNative(FakeNavigatorUAData.prototype.toJSON, origJSON);
+    }
+    try {
+      Object.defineProperty(FakeNavigatorUAData, "name", { value: "NavigatorUAData", configurable: true });
+      Object.defineProperty(FakeNavigatorUAData.prototype, "constructor", {
+        value: NativeUAData, configurable: true, writable: true
+      });
+    } catch {}
+  }
+
   (function patchBrave() {
     if (typeof Navigator === "undefined" || !Navigator.prototype) return;
     const NavProto = Navigator.prototype;
 
-    // Сохраняем оригинальный геттер, если он есть (в настоящем Brave).
     const origDesc = Object.getOwnPropertyDescriptor(NavProto, "brave");
     const origGet = origDesc && typeof origDesc.get === "function" ? origDesc.get : null;
 
-    // Фейковый объект Brave с методом isBrave().
     function BraveSpoof() {}
     BraveSpoof.prototype.isBrave = function () {
       return Promise.resolve(true);
@@ -226,7 +284,6 @@
       configurable: true,
       enumerable: origDesc ? origDesc.enumerable : false,
       get: function () {
-        // Если активен профиль Brave — возвращаем фейковый объект.
         if (CFG.profile && CFG.profile.browser === "brave") {
           if (!this.__tsr_brave) {
             Object.defineProperty(this, "__tsr_brave", {
@@ -236,13 +293,99 @@
           }
           return this.__tsr_brave;
         }
-        // Иначе — оригинальное поведение (или undefined).
         return origGet ? origGet.call(this) : undefined;
       }
     });
   })();
 
-  // ---------- WebRTC ----------
+  (function patchScreen() {
+    if (typeof Screen === "undefined" || !Screen.prototype) return;
+    const ScreenProto = Screen.prototype;
+
+    function redefineScreen(name, getter) {
+      const desc = Object.getOwnPropertyDescriptor(ScreenProto, name);
+      if (!desc || typeof desc.get !== "function") return;
+      const orig = desc.get;
+      const patched = mimic(function () {
+        if (!CFG.profile || !CFG.profile.screen) return orig.call(this);
+        return getter(CFG.profile.screen);
+      }, orig, "get " + name, 0);
+      safeDefine(ScreenProto, name, {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get: patched
+      });
+    }
+
+    redefineScreen("width",       (s) => s.width);
+    redefineScreen("height",      (s) => s.height);
+    redefineScreen("availWidth",  (s) => s.availWidth);
+    redefineScreen("availHeight", (s) => s.availHeight);
+    redefineScreen("colorDepth",  (s) => s.colorDepth);
+    redefineScreen("pixelDepth",  (s) => s.colorDepth);
+  })();
+
+  (function patchDPR() {
+    let desc = Object.getOwnPropertyDescriptor(window, "devicePixelRatio");
+    let target = window;
+    if (!desc && typeof Window !== "undefined") {
+      desc = Object.getOwnPropertyDescriptor(Window.prototype, "devicePixelRatio");
+      target = Window.prototype;
+    }
+    if (!desc || typeof desc.get !== "function") return;
+    const orig = desc.get;
+    const patched = mimic(function () {
+      if (!CFG.profile || !CFG.profile.screen) return orig.call(this);
+      return CFG.profile.screen.pixelRatio;
+    }, orig, "get devicePixelRatio", 0);
+    safeDefine(target, "devicePixelRatio", {
+      configurable: true,
+      enumerable: desc.enumerable,
+      get: patched
+    });
+  })();
+
+  (function patchIntl() {
+    if (typeof Intl === "undefined" || !Intl.DateTimeFormat) return;
+    const DTF = Intl.DateTimeFormat;
+    const origResolvedOptions = DTF.prototype.resolvedOptions;
+    if (typeof origResolvedOptions !== "function") return;
+
+    DTF.prototype.resolvedOptions = mimic(function () {
+      const opts = origResolvedOptions.call(this);
+      if (!CFG.profile || !CFG.profile.timezone) return opts;
+      try { opts.timeZone = CFG.profile.timezone; } catch {}
+      return opts;
+    }, origResolvedOptions, "resolvedOptions", 0);
+
+    const origOffset = Date.prototype.getTimezoneOffset;
+    if (typeof origOffset === "function") {
+      Date.prototype.getTimezoneOffset = mimic(function () {
+        if (!CFG.profile || !CFG.profile.timezone) return origOffset.call(this);
+        try {
+          const tz = CFG.profile.timezone;
+          const dtf = new DTF("en-US", {
+            timeZone: tz,
+            hour12: false,
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit"
+          });
+          const parts = dtf.formatToParts(this);
+          const m = {};
+          for (const p of parts) m[p.type] = p.value;
+          const hour = m.hour === "24" ? "00" : m.hour;
+          const asUTC = Date.UTC(
+            parseInt(m.year, 10), parseInt(m.month, 10) - 1, parseInt(m.day, 10),
+            parseInt(hour, 10), parseInt(m.minute, 10), parseInt(m.second, 10)
+          );
+          return Math.round((this.getTime() - asUTC) / 60000);
+        } catch {
+          return origOffset.call(this);
+        }
+      }, origOffset, "getTimezoneOffset", 0);
+    }
+  })();
+
   (function patchRTC() {
     const RTC = window.RTCPeerConnection;
     if (typeof RTC !== "function") return;
@@ -261,32 +404,10 @@
       Object.defineProperty(RTC.prototype, "constructor", {
         value: Patched, configurable: true, writable: true
       });
-    } catch { /* ignore */ }
+    } catch {}
 
-    try { window.RTCPeerConnection = Patched; } catch { /* ignore */ }
+    try { window.RTCPeerConnection = Patched; } catch {}
   })();
-
-  // ---------- Canvas noise ----------
-  let sessionSalt = 0;
-  try {
-    const s = localStorage.getItem("__tsr_salt_v1");
-    if (s) sessionSalt = parseInt(s, 10) | 0;
-    if (!sessionSalt) {
-      sessionSalt = (Math.random() * 0x7fffffff) | 0;
-      localStorage.setItem("__tsr_salt_v1", String(sessionSalt));
-    }
-  } catch {
-    sessionSalt = (Math.random() * 0x7fffffff) | 0;
-  }
-
-  function hash32(str) {
-    let h = 0x811c9dc5 ^ sessionSalt;
-    for (let i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      h = Math.imul(h, 0x01000193);
-    }
-    return h >>> 0;
-  }
 
   function addDetNoise(data, seed) {
     let s = (seed || 1) >>> 0;
@@ -334,7 +455,6 @@
     }, origToBlob, "toBlob", 1);
   }
 
-  // ---------- WebGL ----------
   const SPOOF_BY_PLATFORM = {
     Windows: {
       vendor: "Google Inc. (NVIDIA)",
@@ -378,7 +498,6 @@
   if (typeof WebGLRenderingContext !== "undefined") patchWebGL(WebGLRenderingContext.prototype);
   if (typeof WebGL2RenderingContext !== "undefined") patchWebGL(WebGL2RenderingContext.prototype);
 
-  // ---------- WebGPU ----------
   (function patchWebGPU() {
     if (typeof GPUAdapterInfo === "undefined" || !GPUAdapterInfo.prototype) return;
 
@@ -412,18 +531,8 @@
     }
   })();
 
-  // ---------- AudioContext ----------
   (function patchAudio() {
     if (typeof AudioContext === "undefined" && typeof webkitAudioContext === "undefined") return;
-
-    function noiseForAudio(data, seed) {
-      let s = (seed || 1) >>> 0;
-      for (let i = 0; i < data.length; i += 100) {
-        s = (Math.imul(s, 1103515245) + 12345) >>> 0;
-        const bit = (s & 1) ? 1e-7 : -1e-7;
-        data[i] += bit;
-      }
-    }
 
     function audioSeedFor(x) {
       try {
@@ -432,6 +541,14 @@
         const nc = x.numberOfChannels || 0;
         return hash32("a" + sr + "|" + len + "|" + nc);
       } catch { return 1; }
+    }
+
+    function noiseForAudio(data, seed) {
+      let s = (seed || 1) >>> 0;
+      for (let i = 0; i < data.length; i += 100) {
+        s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+        data[i] += (s & 1) ? 1e-8 : -1e-8;
+      }
     }
 
     if (typeof AudioBuffer !== "undefined") {
@@ -444,57 +561,20 @@
           return data;
         }, origGetChannelData, "getChannelData", 1);
       }
-
-      const origCopyFromChannel = AudioBuffer.prototype.copyFromChannel;
-      if (typeof origCopyFromChannel === "function") {
-        AudioBuffer.prototype.copyFromChannel = mimic(function (destination, channelNumber, bufferOffset = 0) {
-          const result = origCopyFromChannel.call(this, destination, channelNumber, bufferOffset);
-          if (!CFG.profile) return result;
-          noiseForAudio(destination, audioSeedFor(this));
-          return result;
-        }, origCopyFromChannel, "copyFromChannel", 2);
-      }
-    }
-
-    if (typeof AnalyserNode !== "undefined") {
-      const origGetFloat = AnalyserNode.prototype.getFloatFrequencyData;
-      if (typeof origGetFloat === "function") {
-        AnalyserNode.prototype.getFloatFrequencyData = mimic(function (array) {
-          const result = origGetFloat.call(this, array);
-          if (!CFG.profile) return result;
-          noiseForAudio(array, audioSeedFor(this));
-          return result;
-        }, origGetFloat, "getFloatFrequencyData", 1);
-      }
-
-      const origGetByte = AnalyserNode.prototype.getByteFrequencyData;
-      if (typeof origGetByte === "function") {
-        AnalyserNode.prototype.getByteFrequencyData = mimic(function (array) {
-          const result = origGetByte.call(this, array);
-          if (!CFG.profile) return result;
-          let s = audioSeedFor(this);
-          for (let i = 0; i < array.length; i += 50) {
-            s = (Math.imul(s, 1103515245) + 12345) >>> 0;
-            array[i] = (array[i] + ((s & 1) ? 1 : -1)) & 0xff;
-          }
-          return result;
-        }, origGetByte, "getByteFrequencyData", 1);
-      }
     }
   })();
 
-  // ---------- Шрифты (font enumeration) ----------
   (function patchFonts() {
     if (typeof FontFaceSet !== "undefined" && FontFaceSet.prototype &&
         typeof FontFaceSet.prototype.check === "function") {
       const origCheck = FontFaceSet.prototype.check;
-      const STD = /(\bserif\b|\bsans-serif\b|\bmonospace\b|\bcursive\b|\bfantasy\b|\bsystem-ui\b|-apple-system|\bBlinkMacSystemFont\b|\bSegoe UI\b|\bRoboto\b|\bHelvetica\b|\bArial\b)/i;
+      const GENERIC_FONTS = /(?:^|\s)(?:["']?)(serif|sans-serif|monospace|cursive|fantasy|system-ui)(?:["']?)$/i;
       try {
         FontFaceSet.prototype.check = mimic(function (font, text = " ") {
-          if (CFG.profile && STD.test(font)) return true;
+          if (CFG.profile && GENERIC_FONTS.test(String(font))) return true;
           return origCheck.call(this, font, text);
         }, origCheck, "check", 1);
-      } catch { /* ignore */ }
+      } catch {}
     }
 
     const origMeasure = CanvasRenderingContext2D.prototype.measureText;
@@ -503,29 +583,26 @@
         const m = origMeasure.call(this, text);
         if (!CFG.profile) return m;
         const seed = hash32(text + this.font);
-        const delta = ((seed % 100) - 50) / 10000;
-        for (const prop of ["width", "actualBoundingBoxAscent", "actualBoundingBoxDescent",
-                            "fontBoundingBoxAscent", "fontBoundingBoxDescent"]) {
-          try {
-            const v = m[prop];
-            if (typeof v === "number") {
-              Object.defineProperty(m, prop, { value: v + delta, configurable: true });
-            }
-          } catch { /* read-only */ }
-        }
+        const delta = ((seed % 100) - 50) / 100000;
+        try {
+          const w = m.width;
+          if (typeof w === "number") {
+            Object.defineProperty(m, "width", { value: w + delta, configurable: true });
+          }
+        } catch {}
         return m;
       }, origMeasure, "measureText", 1);
     }
   })();
 
-  // ---------- Workers ----------
   function buildWorkerSource(profile, salt) {
     const pJson = JSON.stringify(profile);
+    const s = (salt | 0) || 0;
     return `(function(){
   "use strict";
   var __P__ = ${pJson};
   if (!__P__) return;
-  var SALT = ${salt | 0};
+  var SALT = ${s};
   function hash32(str) {
     var h = 0x811c9dc5 ^ SALT;
     for (var i = 0; i < str.length; i++) {
@@ -573,8 +650,8 @@
     }
     redefine("hardwareConcurrency", __P__.hardwareConcurrency);
     redefine("deviceMemory", __P__.deviceMemory);
+    redefine("maxTouchPoints", 0);
 
-    // Brave spoof в Worker (navigator.brave)
     if (__P__.browser === "brave") {
       try {
         var braveObj = { isBrave: function () { return Promise.resolve(true); } };
@@ -587,6 +664,49 @@
         }
       } catch (e) {}
     }
+
+    if (__P__.browser === "firefox" || __P__.browser === "safari") {
+      try {
+        var cd = Object.getOwnPropertyDescriptor(NavProto, "connection");
+        if (cd && cd.configurable) {
+          delete NavProto.connection;
+        }
+      } catch (e) {}
+    }
+
+    if (__P__.timezone && typeof Intl !== "undefined" && Intl.DateTimeFormat) {
+      try {
+        var DTF = Intl.DateTimeFormat;
+        var _ro = DTF.prototype.resolvedOptions;
+        DTF.prototype.resolvedOptions = function () {
+          var o = _ro.call(this);
+          try { o.timeZone = __P__.timezone; } catch (e) {}
+          return o;
+        };
+        var _off = Date.prototype.getTimezoneOffset;
+        Date.prototype.getTimezoneOffset = function () {
+          try {
+            var dtf = new DTF("en-US", {
+              timeZone: __P__.timezone,
+              hour12: false,
+              year: "numeric", month: "2-digit", day: "2-digit",
+              hour: "2-digit", minute: "2-digit", second: "2-digit"
+            });
+            var parts = dtf.formatToParts(this);
+            var m = {};
+            for (var i = 0; i < parts.length; i++) m[parts[i].type] = parts[i].value;
+            var hour = m.hour === "24" ? "00" : m.hour;
+            var asUTC = Date.UTC(
+              parseInt(m.year, 10), parseInt(m.month, 10) - 1, parseInt(m.day, 10),
+              parseInt(hour, 10), parseInt(m.minute, 10), parseInt(m.second, 10)
+            );
+            return Math.round((this.getTime() - asUTC) / 60000);
+          } catch (e) {
+            return _off.call(this);
+          }
+        };
+      } catch (e) {}
+    }
   } catch (e) {}
   if (typeof AudioBuffer !== "undefined") {
     var _g = AudioBuffer.prototype.getChannelData;
@@ -595,7 +715,7 @@
       var s = hash32("ch" + ch + "|" + this.sampleRate + "|" + this.length);
       for (var i = 0; i < d.length; i += 100) {
         s = (Math.imul(s, 1103515245) + 12345) >>> 0;
-        d[i] += (s & 1) ? 1e-7 : -1e-7;
+        d[i] += (s & 1) ? 1e-8 : -1e-8;
       }
       return d;
     };
@@ -615,7 +735,7 @@
           if (typeof url === "string") {
             resolved = new URL(url, location.href).href;
           }
-        } catch { /* keep url */ }
+        } catch {}
         if (
           !isModule &&
           CFG.profile &&
@@ -623,14 +743,14 @@
           resolved.startsWith(location.origin + "/") &&
           !resolved.startsWith("blob:")
         ) {
-          const source = buildWorkerSource(CFG.profile, sessionSalt);
+          const source = buildWorkerSource(CFG.profile, profileSalt());
           const blob = new Blob([source + "\nimportScripts(" + JSON.stringify(resolved) + ");"], {
             type: "application/javascript"
           });
           const blobUrl = URL.createObjectURL(blob);
           return new OrigWorker(blobUrl, options);
         }
-      } catch { /* fall through */ }
+      } catch {}
       return new OrigWorker(url, options);
     }
 
@@ -641,9 +761,9 @@
       Object.defineProperty(OrigWorker.prototype, "constructor", {
         value: PatchedWorker, configurable: true, writable: true
       });
-    } catch { /* ignore */ }
+    } catch {}
 
-    try { window.Worker = PatchedWorker; } catch { /* ignore */ }
+    try { window.Worker = PatchedWorker; } catch {}
   })();
 
 })();

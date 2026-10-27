@@ -15,14 +15,12 @@
       .forEach((el) => { el.disabled = true; });
     const live = document.getElementById("live-pill");
     if (live) { live.textContent = "offline"; live.classList.remove("live"); }
-    console.warn("[TS-Reporter/Dashboard] no chrome.storage — wrong context.");
   }
 
   if (!HAS_EXT) { showWrongContext(); return; }
 
   const K_SETTINGS = "tsr_settings_v1";
   const K_PROGRESS = "tsr_progress_v1";
-  const K_DEBUG    = "tsr_debug_v1";
   const K_EMAILS   = "tsr_emails_v1";
   const K_TARGET   = "tsr_target_channel_v1";
   const K_RATE     = "tsr_rate_v2";
@@ -37,8 +35,7 @@
     timeoutMs: 8000,
     maxRetries: 3,
     cycleLimit: 10,
-    reloadOnFail: true,
-    debug: true
+    reloadOnFail: true
   };
 
   const CONTENT_TYPES = [
@@ -143,7 +140,6 @@
     $("s-timeout").value   = settings.timeoutMs;
     $("s-retries").value   = settings.maxRetries;
     $("s-cycles").value    = settings.cycleLimit;
-    $("s-debug-toggle").checked = settings.debug !== false;
     refreshFileInfo();
   }
 
@@ -191,14 +187,6 @@
     bindInt($("s-timeout"),   "timeoutMs", 500, null);
     bindInt($("s-retries"),   "maxRetries", 1, 20);
     bindInt($("s-cycles"),    "cycleLimit", 0, 999);
-
-    $("s-debug-toggle").addEventListener("change", async () => {
-      settings.debug = $("s-debug-toggle").checked;
-      saveSettingsSoon();
-      if (settings.debug === false) {
-        await chrome.storage.local.set({ [K_DEBUG]: [] });
-      }
-    });
 
     $("s-reason-file").addEventListener("change", () => {
       const file = $("s-reason-file").files && $("s-reason-file").files[0];
@@ -277,26 +265,6 @@
     $("p-ua").textContent = shortUA(p.lastUA);
   }
 
-  function renderDebug(lines) {
-    const el = $("debug-log");
-    const countEl = $("debug-count");
-
-    if (settings.debug === false) {
-      el.textContent = "(debug disabled)";
-      countEl.textContent = "0 lines";
-      return;
-    }
-
-    const arr = Array.isArray(lines) ? lines : [];
-    countEl.textContent = arr.length + " line" + (arr.length === 1 ? "" : "s");
-
-    const autoscroll = $("debug-autoscroll").checked;
-    const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-
-    el.textContent = arr.length ? arr.join("\n") : "(no logs yet)";
-    if (autoscroll && wasAtBottom) el.scrollTop = el.scrollHeight;
-  }
-
   function renderEmails(rows) {
     const tbody = document.querySelector("#emails-table tbody");
     const countEl = $("emails-count");
@@ -356,24 +324,23 @@
         profile = r.data.currentProfile || null;
         rate = r.data.rate || null;
       }
-    } catch { /* background may be down or non-incognito */ }
+    } catch {}
 
     if (!profile) {
       try {
         const sess = await chrome.storage.session.get("tsr_profile_v1");
         profile = sess?.tsr_profile_v1 || null;
-      } catch { /* ignore */ }
+      } catch {}
     }
     if (!rate) {
       try {
         const d = await chrome.storage.local.get(K_RATE);
         rate = d[K_RATE] || null;
-      } catch { /* ignore */ }
+      } catch {}
     }
 
     $("fp-browser").textContent  = profile ? profile.browser : "—";
     $("fp-platform").textContent = profile ? profile.platform : "—";
-    // Отображаем версию с префиксом для Edge и Brave.
     let versionLabel = "—";
     if (profile) {
       if (profile.browser === "edge") versionLabel = `Edge ${profile.version}`;
@@ -408,45 +375,21 @@
 
     $("btn-reset-progress").addEventListener("click", async () => {
       await chrome.storage.local.set({
-        [K_PROGRESS]: { usedLines: [], cycleCount: 0, lastUA: null }
+        [K_PROGRESS]: { usedLines: [], cycleCount: 0, lastUA: null, usedEmails: [] }
       });
       flash("progress reset");
     });
     $("btn-reset-all").addEventListener("click", async () => {
-      if (!confirm("reset settings + progress + debug + emails?")) return;
+      if (!confirm("reset settings + progress + emails?")) return;
       await chrome.storage.local.set({
         [K_SETTINGS]: { ...DEFAULT_SETTINGS },
-        [K_PROGRESS]: { usedLines: [], cycleCount: 0, lastUA: null },
-        [K_DEBUG]: [],
+        [K_PROGRESS]: { usedLines: [], cycleCount: 0, lastUA: null, usedEmails: [] },
         [K_EMAILS]: [],
         [K_TARGET]: null
       });
       settings = { ...DEFAULT_SETTINGS };
       applySettingsToForm();
       flash("everything reset");
-    });
-
-    $("btn-clear-debug").addEventListener("click", async () => {
-      await chrome.storage.local.set({ [K_DEBUG]: [] });
-      flash("debug cleared");
-    });
-    $("btn-copy-debug").addEventListener("click", async () => {
-      const data = await chrome.storage.local.get(K_DEBUG);
-      const text = (data[K_DEBUG] || []).join("\n");
-      await navigator.clipboard.writeText(text);
-      flash("debug copied");
-    });
-    $("btn-export-debug").addEventListener("click", async () => {
-      const data = await chrome.storage.local.get(K_DEBUG);
-      const arr = data[K_DEBUG] || [];
-      const header = [
-        "# TS-Reporter debug export",
-        "# timestamp: " + new Date().toISOString(),
-        "# lines: " + arr.length,
-        ""
-      ].join("\n");
-      const ok = downloadFile(`tsr-debug-${Date.now()}.log`, header + arr.join("\n"));
-      flash(ok ? "debug exported" : "export failed");
     });
 
     $("btn-clear-emails").addEventListener("click", async () => {
@@ -487,10 +430,10 @@
   function subscribeStorage() {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
-      if (changes[K_DEBUG])  renderDebug(changes[K_DEBUG].newValue);
       if (changes[K_EMAILS]) renderEmails(changes[K_EMAILS].newValue);
       if (changes[K_SETTINGS]) {
         settings = { ...DEFAULT_SETTINGS, ...(changes[K_SETTINGS].newValue || {}) };
+        delete settings.debug;
         const active = document.activeElement?.id || "";
         if (!active.startsWith("s-")) applySettingsToForm();
       }
@@ -502,7 +445,7 @@
       chrome.storage.session.onChanged.addListener((changes) => {
         if (changes.tsr_profile_v1) refreshFingerprint();
       });
-    } catch { /* ignore */ }
+    } catch {}
   }
 
   async function loadProgressAndTarget() {
@@ -511,11 +454,11 @@
   }
 
   async function reloadAll() {
-    const data = await chrome.storage.local.get([K_SETTINGS, K_PROGRESS, K_DEBUG, K_EMAILS, K_TARGET]);
+    const data = await chrome.storage.local.get([K_SETTINGS, K_PROGRESS, K_EMAILS, K_TARGET]);
     settings = { ...DEFAULT_SETTINGS, ...(data[K_SETTINGS] || {}) };
+    delete settings.debug;
     applySettingsToForm();
     renderProgress(data[K_PROGRESS], settings, data[K_TARGET]);
-    renderDebug(data[K_DEBUG] || []);
     renderEmails(data[K_EMAILS] || []);
     await refreshFingerprint();
     flash("refreshed");
@@ -528,7 +471,6 @@
     subscribeStorage();
     await reloadAll();
     $("live-pill").classList.add("live");
-    console.log("[TS-Reporter/Dashboard] ready");
   }
 
   document.addEventListener("DOMContentLoaded", init, { once: true });

@@ -1,6 +1,3 @@
-// content/isolated.js — ISOLATED world, document_start
-// Мост: читает профиль из chrome.storage.session (fallback — message),
-// пишет в localStorage (sync-init для injected.js) и постит в MAIN world.
 (() => {
   "use strict";
 
@@ -15,16 +12,13 @@
     try {
       if (profile) localStorage.setItem(LS_KEY, JSON.stringify(profile));
       else         localStorage.removeItem(LS_KEY);
-    } catch { /* ignore */ }
+    } catch {}
   }
 
-  // ВАЖНО: post() должен отправлять и profile=null — иначе при CLEAR_UA
-  // injected.js в текущей вкладке не узнает об очистке (когда сигнал приходит
-  // через storage.onChanged или PROFILE_UPDATED, а не через executeScript).
   function post(profile) {
     try {
       window.postMessage({ __tsr: 1, type: "CONFIG", profile: profile || null }, TARGET_ORIGIN);
-    } catch { /* ignore */ }
+    } catch {}
   }
 
   function apply(profile) {
@@ -32,7 +26,6 @@
     post(profile);
   }
 
-  // ---- Первичный fetch: session storage, fallback — background.
   let attempts = 0;
   const MAX_ATTEMPTS = 20;
   const RETRY_MS = 100;
@@ -60,7 +53,6 @@
   }
   tryFetch();
 
-  // ---- Live-update №1: session storage change.
   try {
     chrome.storage.session.onChanged.addListener((changes) => {
       if (changes[PROFILE_KEY]) {
@@ -68,13 +60,12 @@
         apply(p);
       }
     });
-  } catch { /* session access недоступен */ }
+  } catch {}
 
-  // ---- Live-update №2: push от background (на случай, если (1) не сработал).
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (!msg || msg.type !== "PROFILE_UPDATED") return;
       apply(msg.profile || null);
     });
-  } catch { /* ignore */ }
+  } catch {}
 })();

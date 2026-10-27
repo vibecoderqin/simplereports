@@ -1,7 +1,6 @@
 (() => {
   "use strict";
 
-  const LOG_PREFIX = "[TS-Reporter]";
   const IS_INCOGNITO = chrome.extension?.inIncognitoContext === true;
   if (!IS_INCOGNITO) return;
 
@@ -11,10 +10,8 @@
   const K_PROGRESS = "tsr_progress_v1";
   const K_RESUME   = "tsr_resume_v1";
   const K_TARGET   = "tsr_target_channel_v1";
-  const K_DEBUG    = "tsr_debug_v1";
   const K_EMAILS   = "tsr_emails_v1";
 
-  const DEBUG_LIMIT = 800;
   const EMAIL_LIMIT = 2000;
   const USED_EMAILS_LIMIT = 5000;
   const RESUME_SETTLE_MS = 3000;
@@ -30,8 +27,7 @@
     timeoutMs: 8000,
     maxRetries: 3,
     cycleLimit: 10,
-    reloadOnFail: true,
-    debug: true
+    reloadOnFail: true
   };
 
   const DEFAULT_PROGRESS = {
@@ -52,36 +48,6 @@
     challengeStrikes: 0
   };
 
-  const isDebug = () => state.settings.debug !== false;
-  const log   = (...a) => { if (!isDebug()) return; console.log(LOG_PREFIX, ...a); };
-  const warn  = (...a) => { if (!isDebug()) return; console.warn(LOG_PREFIX, ...a); };
-  const err   = (...a) => { if (!isDebug()) return; console.error(LOG_PREFIX, ...a); };
-
-  let debugQueue = [];
-  let debugFlushTimer = null;
-
-  function flushDebugQueue() {
-    debugFlushTimer = null;
-    if (!debugQueue.length) return;
-    const batch = debugQueue;
-    debugQueue = [];
-    chrome.storage.local.get(K_DEBUG).then((data) => {
-      const arr = Array.isArray(data[K_DEBUG]) ? data[K_DEBUG] : [];
-      arr.push(...batch);
-      if (arr.length > DEBUG_LIMIT) arr.splice(0, arr.length - DEBUG_LIMIT);
-      chrome.storage.local.set({ [K_DEBUG]: arr });
-    }).catch(() => {});
-  }
-
-  const debugLog = (line) => {
-    if (!isDebug()) return;
-    const stamped = `[${new Date().toISOString().slice(11, 19)}] ${line}`;
-    log(line);
-    debugQueue.push(stamped);
-    if (debugQueue.length > 40) flushDebugQueue();
-    else if (!debugFlushTimer) debugFlushTimer = setTimeout(flushDebugQueue, 250);
-  };
-
   async function recordEmail(email, channel, reason, subreason, ua) {
     try {
       const data = await chrome.storage.local.get(K_EMAILS);
@@ -96,7 +62,7 @@
       });
       if (arr.length > EMAIL_LIMIT) arr.splice(0, arr.length - EMAIL_LIMIT);
       await chrome.storage.local.set({ [K_EMAILS]: arr });
-    } catch (e) { warn("recordEmail failed", e); }
+    } catch {}
   }
 
   const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -154,26 +120,12 @@
     return null;
   }
 
-  function detectLanguageHint() {
-    try {
-      const html = document.documentElement.getAttribute("lang") || "";
-      if (html) return html.toLowerCase();
-      const nav = (navigator.language || "").toLowerCase();
-      return nav;
-    } catch { return "en"; }
-  }
-
-  // ============================================================
-  // Email generation
-  // ============================================================
-
   const EMAIL_PREFIXES = [
     "user", "usr", "mail", "inbox", "contact", "acc", "account",
     "member", "reg", "signup", "hello", "info", "no-reply", "support",
     "help", "admin", "team", "office", "client", "guest"
   ];
 
-  // Западные имена/фамилии (транслит латиницей).
   const WESTERN_FIRST_M = [
     "james","john","robert","michael","william","david","richard","joseph","thomas","charles",
     "christopher","daniel","matthew","anthony","mark","donald","steven","paul","andrew","joshua",
@@ -219,7 +171,6 @@
     "gibson","ellis","tran","medina","aguilar","stevens","murray","ford","castro","marshall"
   ];
 
-  // Русские имена/фамилии — транслит латиницей (для mail.ru/yandex/gmail и др.).
   const RU_FIRST_M = [
     "aleksandr","alexander","aleksey","andrey","anton","arkadiy","artem","artyom","bogdan","boris",
     "vadim","valentin","valeriy","vasiliy","viktor","vitaliy","vladimir","vladislav","vsevolod","vyacheslav",
@@ -259,7 +210,6 @@
   ];
   const RU_LAST_F = RU_LAST_M.map((n) => n + "a");
 
-  // Китайские (пиньинь).
   const CN_FIRST = [
     "wei","fang","jing","min","jun","yan","hao","lei","qiang","jie","yu","yang","bo","kai","hui",
     "ling","na","xia","qing","hua","xiao","bing","chao","long","peng","fei","gang","tao","xin","zhe",
@@ -271,9 +221,6 @@
     "zeng","xiao","tian","dong","yuan","pan","yu","du","jiang","cai"
   ];
 
-  // Веса доменов по группе имени.
-  // Gmail присутствует во всех трёх группах — это глобальная почта,
-  // и русские имена на @gmail.com абсолютно нормальны.
   const DOMAIN_WEIGHTS = {
     west: [
       { domain: "gmail.com",      weight: 50 },
@@ -318,9 +265,9 @@
 
   function pickNameGroup() {
     const r = Math.random();
-    if (r < 0.50) return "ru";     // русские имена (в т.ч. на gmail)
-    if (r < 0.95) return "west";   // западные
-    return "cn";                    // китайские
+    if (r < 0.50) return "ru";
+    if (r < 0.95) return "west";
+    return "cn";
   }
 
   function pickNames(group) {
@@ -357,7 +304,6 @@
     const f = first, l = last;
     const fi = f[0], li = l[0];
 
-    // Год рождения: со сдвигом в молодой диапазон.
     const y4 = (() => {
       const r = Math.random();
       if (r < 0.55) return rand(1990, 2008);
@@ -373,68 +319,19 @@
     const bizPrefix = pick(EMAIL_PREFIXES);
 
     const variants = [
-      // чистое имя + фамилия
-      `${f}.${l}`,
-      `${f}_${l}`,
-      `${f}${l}`,
-      `${l}.${f}`,
-      `${l}_${f}`,
-      `${l}${f}`,
-      `${fi}.${l}`,
-      `${fi}${l}`,
-      `${fi}_${l}`,
-      `${f}.${li}`,
-      `${f}${li}`,
-      `${f}_${li}`,
-      `${fi}${li}`,
-      `${fi}.${li}`,
-
-      // с 4-значным годом
-      `${f}.${l}${y4}`,
-      `${f}${l}${y4}`,
-      `${f}_${l}_${y4}`,
-      `${f}.${l}.${y4}`,
-      `${l}${f}${y4}`,
-      `${f}${li}${y4}`,
-      `${fi}${l}${y4}`,
-      `${f}${y4}`,
-      `${l}${y4}`,
-
-      // с 2-значным годом
-      `${f}${l}${y2s}`,
-      `${f}.${l}${y2s}`,
-      `${f}_${l}_${y2s}`,
-      `${f}${y2s}`,
-      `${l}${y2s}`,
-      `${fi}${l}${y2s}`,
-      `${fi}${li}${y2s}`,
-
-      // с коротким числом
-      `${f}.${l}${n2}`,
-      `${f}${l}${n2}`,
-      `${f}_${l}${n2}`,
-      `${f}${n2}`,
-      `${l}${n2}`,
-      `${fi}${li}${n2}`,
-
-      // с 3-значным числом
-      `${f}.${l}${n3}`,
-      `${f}${l}${n3}`,
-      `${f}${n3}`,
-      `${f}_${n3}`,
-      `${fi}${l}${n3}`,
-
-      // с 4-значным числом (не год — просто «не заняли имя»)
-      `${f}.${l}${n4}`,
-      `${f}${l}${n4}`,
-      `${f}${n4}`,
-
-      // «бизнес»-стиль
-      `${bizPrefix}${n3}`,
-      `${bizPrefix}${n4}`,
-      `${bizPrefix}_${n3}`,
-      `${bizPrefix}.${l}`,
-      `${bizPrefix}_${l}`
+      `${f}.${l}`, `${f}_${l}`, `${f}${l}`,
+      `${l}.${f}`, `${l}_${f}`, `${l}${f}`,
+      `${fi}.${l}`, `${fi}${l}`, `${fi}_${l}`,
+      `${f}.${li}`, `${f}${li}`, `${f}_${li}`,
+      `${fi}${li}`, `${fi}.${li}`,
+      `${f}.${l}${y4}`, `${f}${l}${y4}`, `${f}_${l}_${y4}`, `${f}.${l}.${y4}`,
+      `${l}${f}${y4}`, `${f}${li}${y4}`, `${fi}${l}${y4}`, `${f}${y4}`, `${l}${y4}`,
+      `${f}${l}${y2s}`, `${f}.${l}${y2s}`, `${f}_${l}_${y2s}`, `${f}${y2s}`, `${l}${y2s}`,
+      `${fi}${l}${y2s}`, `${fi}${li}${y2s}`,
+      `${f}.${l}${n2}`, `${f}${l}${n2}`, `${f}_${l}${n2}`, `${f}${n2}`, `${l}${n2}`, `${fi}${li}${n2}`,
+      `${f}.${l}${n3}`, `${f}${l}${n3}`, `${f}${n3}`, `${f}_${n3}`, `${fi}${l}${n3}`,
+      `${f}.${l}${n4}`, `${f}${l}${n4}`, `${f}${n4}`,
+      `${bizPrefix}${n3}`, `${bizPrefix}${n4}`, `${bizPrefix}_${n3}`, `${bizPrefix}.${l}`, `${bizPrefix}_${l}`
     ];
 
     return pick(variants);
@@ -450,7 +347,6 @@
       if (!usedEmailsSet.has(candidate)) { email = candidate; break; }
     }
     if (!email) {
-      // Гарантия уникальности: длинный числовой хвост.
       email = `${buildLocalPart(group)}${rand(10000, 99999)}@${domain}`;
     }
 
@@ -464,13 +360,8 @@
     }
     persistSoon();
 
-    debugLog(`email: group=${group} domain=${domain} → ${email}`);
     return email;
   }
-
-  // ============================================================
-  // DOM helpers
-  // ============================================================
 
   const inPanel = (el) => !!(el && el.closest && el.closest("#" + PANEL_ID));
 
@@ -500,12 +391,10 @@
         [K_SETTINGS, K_PROGRESS, K_POS, K_TARGET, K_EMAILS]
       );
       if (data[K_SETTINGS]) state.settings = { ...DEFAULT_SETTINGS, ...data[K_SETTINGS] };
+      delete state.settings.debug;
       if (data[K_PROGRESS]) state.progress = { ...DEFAULT_PROGRESS, ...data[K_PROGRESS] };
       if (data[K_TARGET])   state.targetChannel = data[K_TARGET];
 
-      // Гидрируем usedEmailsSet из двух источников:
-      //   1) массив usedEmails в прогрессе (основной);
-      //   2) журнал K_EMAILS (страховка на случай сброса прогресса).
       usedEmailsSet = new Set(
         Array.isArray(state.progress.usedEmails) ? state.progress.usedEmails : []
       );
@@ -519,8 +408,7 @@
           0, state.progress.usedEmails.length - USED_EMAILS_LIMIT
         );
       }
-      debugLog(`loadAll: ${usedEmailsSet.size} used email(s) hydrated`);
-    } catch (e) { warn("loadAll failed", e); }
+    } catch (e) {}
   }
 
   let saveTimer = null;
@@ -594,133 +482,51 @@
   const CHANNEL_BTN_TARGET = "report-button-report-button";
 
   const REPORT_CHANNEL_PATTERNS = [
-    /report\s+channel/i,
-    /report\s+.*channel/i,
-    /kanal\s+melden/i,
-    /kanal\s+reporten/i,
-    /kanal\s+berichten/i,
+    /report\s+channel/i, /report\s+.*channel/i,
+    /kanal\s+melden/i, /kanal\s+reporten/i, /kanal\s+berichten/i,
     /über\s+.*kanal\s+berichten/i,
-    /signaler\s+la\s+cha[iî]ne/i,
-    /signaler\s+la\s+chaine/i,
-    /signaler\s+.*cha[iî]ne/i,
-    /denunciar\s+(el\s+)?canal/i,
-    /informar\s+sobre\s+(el\s+)?canal/i,
-    /reportar\s+(o\s+)?canal/i,
-    /denunciar\s+canal/i,
+    /signaler\s+la\s+cha[iî]ne/i, /signaler\s+la\s+chaine/i, /signaler\s+.*cha[iî]ne/i,
+    /denunciar\s+(el\s+)?canal/i, /informar\s+sobre\s+(el\s+)?canal/i,
+    /reportar\s+(o\s+)?canal/i, /denunciar\s+canal/i,
     /segnala\s+(il\s+)?canale/i,
-    /rapporter\s+kanal/i,
-    /rapportera\s+kanal/i,
-    /rapporteer\s+kanaal/i,
-    /raportuj\s+kanał/i,
-    /raportuj\s+kanal/i,
+    /rapporter\s+kanal/i, /rapportera\s+kanal/i, /rapporteer\s+kanaal/i,
+    /raportuj\s+kanał/i, /raportuj\s+kanal/i,
     /kanalı\s+şikayet\s+et/i,
     /пожаловаться\s+на\s+канал/i,
-    /举报频道/,
-    /通報チャンネル/,
-    /チャンネルを報告/,
-    /채널\s*신고/
+    /举报频道/, /通報チャンネル/, /チャンネルを報告/, /채널\s*신고/
   ];
 
   const FILE_REPORT_PATTERNS = [
-    /file\s+a\s+report/i,
-    /submit\s+a\s+report/i,
-    /send\s+(a\s+)?report/i,
-    /report\s+user/i,
-    /file\s+report/i,
-    /create\s+report/i,
-    /eine\s+meldung\s+einreichen/i,
-    /meldung\s+einreichen/i,
-    /bericht\s+einreichen/i,
-    /einen\s+versto[sß]\s+melden/i,
-    /versto[sß]\s+melden/i,
-    /envoyer\s+un\s+signalement/i,
-    /envoyer\s+un\s+rapport/i,
-    /signaler\s+un\s+rapport/i,
-    /signaler\s+un\s+signalement/i,
-    /enviar\s+un\s+informe/i,
-    /enviar\s+un\s+reporte/i,
-    /denunciar\s+un\s+reporte/i,
-    /enviar\s+uma\s+den[uú]ncia/i,
-    /enviar\s+den[uú]ncia/i,
-    /invia\s+una\s+segnalazione/i,
-    /invia\s+un.*segnalazione/i,
-    /segnala\s+un.*segnalazione/i,
-    /skicka\s+en\s+anmälan/i,
-    /anmäl/i,
-    /подать\s+жалобу/i,
-    /отправить\s+жалобу/i,
-    /пожаловаться/i,
-    /сообщить\s+о\s+нарушении/i,
-    /举报/,
-    /报告/,
-    /通報/,
-    /報告/,
-    /신고/,
-    /şikayet\s+et/i,
-    /bildir/i
+    /file\s+a\s+report/i, /submit\s+a\s+report/i, /send\s+(a\s+)?report/i,
+    /report\s+user/i, /file\s+report/i, /create\s+report/i,
+    /eine\s+meldung\s+einreichen/i, /meldung\s+einreichen/i, /bericht\s+einreichen/i,
+    /einen\s+versto[sß]\s+melden/i, /versto[sß]\s+melden/i,
+    /envoyer\s+un\s+signalement/i, /envoyer\s+un\s+rapport/i,
+    /signaler\s+un\s+rapport/i, /signaler\s+un\s+signalement/i,
+    /enviar\s+un\s+informe/i, /enviar\s+un\s+reporte/i, /denunciar\s+un\s+reporte/i,
+    /enviar\s+uma\s+den[uú]ncia/i, /enviar\s+den[uú]ncia/i,
+    /invia\s+una\s+segnalazione/i, /invia\s+un.*segnalazione/i, /segnala\s+un.*segnalazione/i,
+    /skicka\s+en\s+anmälan/i, /anmäl/i,
+    /подать\s+жалобу/i, /отправить\s+жалобу/i, /пожаловаться/i, /сообщить\s+о\s+нарушении/i,
+    /举报/, /报告/, /通報/, /報告/, /신고/,
+    /şikayet\s+et/i, /bildir/i
   ];
 
   const BLOCK_EXCLUDE_PATTERNS = [
-    /^block/i,
-    /^blocking/i,
-    /^blockieren/i,
-    /^blockera/i,
-    /^blocca/i,
-    /^bloquer/i,
-    /^bloquear/i,
-    /^bloc\b/i,
-    /^блок/i,
-    /^заблокировать/i,
-    /^屏蔽/i,
-    /^ブロック/,
-    /^차단/,
-    /^engelle/i,
-    /^cancel/i,
-    /^abbrechen/i,
-    /^annuler/i,
-    /^cancelar/i,
-    /^annulla/i,
-    /^avbryt/i,
-    /^annuller/i,
-    /^anuluj/i,
-    /^iptal/i,
-    /^取消/,
-    /^キャンセル/,
-    /^취소/,
-    /^close$/i,
-    /^schlie[sß]en$/i,
-    /^fermer$/i,
-    /^cerrar$/i,
-    /^chiudi$/i,
-    /^stäng$/i,
-    /^sluiten$/i,
-    /^закрыть$/i,
-    /^закрити$/i,
-    /^关闭$/,
-    /^閉じる$/,
-    /^닫기$/,
-    /^kapat$/i,
-    /^anmelden$/i,
-    /^einloggen$/i,
-    /^log\s*in$/i,
-    /^login$/i,
-    /^sign\s*in$/i,
-    /^sign\s*up$/i,
-    /^register$/i,
-    /^registrieren$/i,
-    /^s'?inscrire$/i,
-    /^connexion$/i,
-    /^se\s+connecter$/i,
-    /^iniciar\s+sesi[oó]n$/i,
-    /^entrar$/i,
-    /^accedi$/i,
-    /^acceder$/i,
-    /^войти$/i,
-    /^вход$/i,
-    /^注册$/,
-    /^ログイン$/,
-    /^로그인$/i,
-    /^giri[sş]\s+yap$/i
+    /^block/i, /^blocking/i, /^blockieren/i, /^blockera/i, /^blocca/i,
+    /^bloquer/i, /^bloquear/i, /^bloc\b/i, /^блок/i, /^заблокировать/i,
+    /^屏蔽/i, /^ブロック/, /^차단/, /^engelle/i,
+    /^cancel/i, /^abbrechen/i, /^annuler/i, /^cancelar/i, /^annulla/i,
+    /^avbryt/i, /^annuller/i, /^anuluj/i, /^iptal/i,
+    /^取消/, /^キャンセル/, /^취소/,
+    /^close$/i, /^schlie[sß]en$/i, /^fermer$/i, /^cerrar$/i, /^chiudi$/i,
+    /^stäng$/i, /^sluiten$/i, /^закрыть$/i, /^закрити$/i,
+    /^关闭$/, /^閉じる$/, /^닫기$/, /^kapat$/i,
+    /^anmelden$/i, /^einloggen$/i, /^log\s*in$/i, /^login$/i,
+    /^sign\s*in$/i, /^sign\s*up$/i, /^register$/i, /^registrieren$/i,
+    /^s'?inscrire$/i, /^connexion$/i, /^se\s+connecter$/i,
+    /^iniciar\s+sesi[oó]n$/i, /^entrar$/i, /^accedi$/i, /^acceder$/i,
+    /^войти$/i, /^вход$/i, /^注册$/, /^ログイン$/, /^로그인$/i, /^giri[sş]\s+yap$/i
   ];
 
   const REASON_LABELS_I18N = {
@@ -903,15 +709,6 @@
     return null;
   }
 
-  function describeButton(b) {
-    const txt = (b.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60);
-    const at = b.getAttribute("data-a-target") || "";
-    const aria = b.getAttribute("aria-label") || "";
-    const cls = (b.className || "").toString().slice(0, 60);
-    const id = b.id || "";
-    return `{text="${txt}", at="${at}", aria="${aria}", cls="${cls}", id="${id}"}`;
-  }
-
   function isChannelReportButton(b) {
     if (!b) return false;
     if (b.getAttribute("data-a-target") === CHANNEL_BTN_TARGET) return true;
@@ -924,19 +721,12 @@
   }
 
   function findFileReportButton() {
-    debugLog("findFileReportButton: scanning for report-prompt button…");
-
     const byText = findClickable(FILE_REPORT_PATTERNS, document, BLOCK_EXCLUDE_PATTERNS);
     if (byText && !isChannelReportButton(byText)) {
-      debugLog(`findFileReportButton: matched by text ${describeButton(byText)}`);
       return byText;
-    }
-    if (byText && isChannelReportButton(byText)) {
-      debugLog(`findFileReportButton: skipping channel-report button ${describeButton(byText)} — going structural`);
     }
 
     const dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
-    debugLog(`findFileReportButton: fallback — scanning ${dialogs.length} dialog(s)`);
     for (const d of dialogs) {
       if (inPanel(d)) continue;
       const r = d.getBoundingClientRect();
@@ -948,8 +738,6 @@
         if (!txt) return false;
         return !BLOCK_EXCLUDE_PATTERNS.some((ex) => ex.test(txt));
       });
-      debugLog(`findFileReportButton: dialog ${r.width|0}x${r.height|0}, buttons=${btns.length}, eligible=${good.length}`);
-      for (const b of btns) debugLog(`  btn: ${describeButton(b)}`);
       if (good.length === 0) continue;
 
       if (good.length === 1) {
@@ -957,27 +745,18 @@
         const headingEl = d.querySelector('h1, h2, h3, [role="heading"]');
         const heading = (headingEl && headingEl.textContent) || "";
         if (/block|blockieren|bloquer|bloquear|blocca|blockera|engelle/i.test(heading)) {
-          debugLog("file-report: single btn but heading is block-related — skipping");
           continue;
         }
-        debugLog(`file-report structural: single button ${describeButton(only)}`);
         return only;
       }
 
       const byAt = good.find((b) => /report|submit|file|signal|denunc|inform|segnala|melden|bericht|жалоб|bildir|举报|通報|신고/i.test(b.getAttribute("data-a-target") || ""));
-      if (byAt) {
-        debugLog(`file-report structural by data-a-target: ${describeButton(byAt)}`);
-        return byAt;
-      }
+      if (byAt) return byAt;
 
       const byCls = good.find((b) => /primary/i.test(b.className || ""));
-      if (byCls) {
-        debugLog(`file-report structural by primary class: ${describeButton(byCls)}`);
-        return byCls;
-      }
+      if (byCls) return byCls;
 
       const last = good[good.length - 1];
-      debugLog(`file-report structural: ${good.length} eligible, no data-a-target/primary — taking last ${describeButton(last)}`);
       return last;
     }
 
@@ -1079,26 +858,6 @@
     return null;
   }
 
-  function dumpWizardRadios(name, scope) {
-    try {
-      const inputs = scope.querySelectorAll(`input[name="${name}"]`);
-      if (inputs.length === 0) {
-        debugLog(`[dump] radio "${name}": 0 inputs found in wizard`);
-        return;
-      }
-      const rows = [];
-      for (const inp of inputs) {
-        const lbl = inp.closest("label") ||
-          scope.querySelector(`label[for="${CSS.escape(inp.id || "")}"]`);
-        const txt = (lbl?.textContent || "").trim().replace(/\s+/g, " ").slice(0, 60);
-        rows.push(`{id="${inp.id || ""}", value="${inp.value || ""}", label="${txt}"}`);
-      }
-      debugLog(`[dump] radio "${name}": ${inputs.length} inputs → ${rows.join(" | ")}`);
-    } catch (e) {
-      debugLog(`[dump] failed for radio "${name}": ${e.message}`);
-    }
-  }
-
   function clickRadioBySlug(name, slug, scope) {
     if (!slug) return false;
     const ids = [
@@ -1114,7 +873,6 @@
         const label = direct.closest("label") ||
           scope.querySelector(`label[for="${CSS.escape(id)}"]`);
         (label || direct).click();
-        debugLog(`radio ${name} clicked by slug id "${id}"`);
         return true;
       }
     }
@@ -1127,7 +885,6 @@
         const label = inp.closest("label") ||
           scope.querySelector(`label[for="${CSS.escape(inp.id)}"]`);
         (label || inp).click();
-        debugLog(`radio ${name} clicked by slug value "${inp.id || ival}"`);
         return true;
       }
     }
@@ -1168,16 +925,10 @@
     if (!labels || !labels.length) return false;
     const sorted = labels.slice().sort((a, b) => b.length - a.length);
     for (const label of sorted) {
-      if (clickRadioByLabelExact(name, label, scope)) {
-        debugLog(`radio ${name} clicked by exact label "${label}"`);
-        return true;
-      }
+      if (clickRadioByLabelExact(name, label, scope)) return true;
     }
     for (const label of sorted) {
-      if (clickRadioByLabelPrefix(name, label, scope)) {
-        debugLog(`radio ${name} clicked by prefix label "${label}"`);
-        return true;
-      }
+      if (clickRadioByLabelPrefix(name, label, scope)) return true;
     }
     return false;
   }
@@ -1189,19 +940,12 @@
       () => wizard.querySelector(`input[name="${name}"]`), 5000);
     if (!el) throw new Error(`radio ${name} never appeared`);
 
-    if (slug && clickRadioBySlug(name, slug, wizard)) {
-      debugLog(`radio ${name} clicked by slug "${slug}"`);
-      return;
-    }
+    if (slug && clickRadioBySlug(name, slug, wizard)) return;
     if (labelText) {
       const labels = Array.isArray(labelText) ? labelText : [labelText];
-      if (clickRadioByAnyLabel(name, labels, wizard)) {
-        debugLog(`radio ${name} clicked by label "${labels[0]}"`);
-        return;
-      }
+      if (clickRadioByAnyLabel(name, labels, wizard)) return;
     }
-    dumpWizardRadios(name, wizard);
-    throw new Error(`radio ${name} not matched (slug="${slug}", labels="${Array.isArray(labelText) ? labelText.join("|") : labelText}")`);
+    throw new Error(`radio ${name} not matched`);
   }
 
   async function clickNext() {
@@ -1211,43 +955,37 @@
       () => wizard.querySelector('[data-a-target="form-navigation-next"]'), 3000);
     if (!btn) throw new Error("next button not found");
     btn.click();
-    debugLog("next clicked");
   }
 
   async function fillDescription(text) {
-    if (!text) { debugLog("no description configured"); return; }
+    if (!text) return;
     const wizard = getWizard();
     if (!wizard) throw new Error("wizard not mounted");
     const ta =
       wizard.querySelector('textarea[aria-label^="Tell us more"]') ||
       wizard.querySelector("textarea#report-wizard-description-form") ||
       wizard.querySelector("textarea");
-    if (!ta) { debugLog("description textarea not found"); return; }
+    if (!ta) return;
     ta.focus();
     ta.value = text;
     ta.dispatchEvent(new Event("input", { bubbles: true }));
     ta.dispatchEvent(new Event("change", { bubbles: true }));
-    debugLog("description filled");
   }
 
   async function checkVerify() {
     const wizard = getWizard();
     if (!wizard) throw new Error("wizard not mounted");
     const cb = wizard.querySelector('input[data-a-target="tw-checkbox"]');
-    if (!cb) { debugLog("verify checkbox not found"); return; }
+    if (!cb) return;
     if (!cb.checked) {
       const label = cb.closest("label") ||
         wizard.querySelector(`label[for="${CSS.escape(cb.id)}"]`);
       (label || cb).click();
-      debugLog("verify checkbox checked");
     }
   }
 
   async function fillEmail() {
-    if (state.settings.reason === "Off Twitch Behavior") {
-      debugLog("email skipped (Off Twitch)");
-      return;
-    }
+    if (state.settings.reason === "Off Twitch Behavior") return;
     const wizard = getWizard();
     if (!wizard) throw new Error("wizard not mounted");
     const input =
@@ -1260,7 +998,6 @@
     input.value = value;
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
-    debugLog(`email filled into #${input.id || "input"}: ${value}`);
     await recordEmail(
       value,
       state.targetChannel,
@@ -1277,14 +1014,12 @@
       () => wizard.querySelector('[data-a-target="form-navigation-submit"]'), 3000);
     if (!btn) throw new Error("submit button not found");
     btn.click();
-    debugLog("submit clicked");
   }
 
   async function closeConfirmation() {
     const btn = await waitForInterruptible(() => qs(SEL.closeConfirm), 8000);
-    if (!btn) { debugLog("no confirmation close button — may not have submitted"); return; }
+    if (!btn) return;
     btn.click();
-    debugLog("confirmation closed");
   }
 
   function detectCaptcha() { return !!qs(SEL.captcha); }
@@ -1317,29 +1052,19 @@
     return out;
   }
 
-  function shortLabel(s) {
-    const firstLine = (s.split("\n")[0] || "").trim();
-    const total = s.split("\n").length;
-    const head = firstLine.slice(0, 40) + (firstLine.length > 40 ? "…" : "");
-    return total > 1 ? `${head} [+${total - 1} lines]` : head;
-  }
-
   function pickDescriptionLine() {
     const variants = parseDescriptionLines(state.settings.descriptionText);
     if (variants.length === 0) return "";
-    if (variants.length === 1) { debugLog(`description: only 1 variant, using it`); return variants[0]; }
+    if (variants.length === 1) return variants[0];
     const used = new Set(state.progress.usedLines);
     let available = variants.filter((l) => !used.has(l));
     if (available.length === 0) {
-      debugLog(`description: all ${variants.length} variants used, resetting cycle`);
       state.progress.usedLines = [];
       available = variants.slice();
     }
     const pick = available[Math.floor(Math.random() * available.length)];
     state.progress.usedLines.push(pick);
     persistSoon();
-    debugLog(`description: picked "${shortLabel(pick)}" ` +
-             `(${state.progress.usedLines.length}/${variants.length})`);
     return pick;
   }
 
@@ -1347,7 +1072,6 @@
     if (!state.targetChannel) return true;
     const cur = getCurrentChannel();
     if (cur === state.targetChannel) return true;
-    debugLog(`⚠ redirected away (now: ${cur || "(no channel)"}, target: ${state.targetChannel}) — navigating back`);
     await chrome.storage.local.set({ [K_RESUME]: true, [K_TARGET]: state.targetChannel });
     await persistNow();
     await sleepInterruptible(200);
@@ -1359,14 +1083,8 @@
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage({ type: "ROTATE_UA" }, (resp) => {
-          if (chrome.runtime.lastError) {
-            debugLog("UA rotate failed: " + chrome.runtime.lastError.message);
-            return resolve(null);
-          }
+          if (chrome.runtime.lastError) return resolve(null);
           if (resp && resp.ok && resp.ua) {
-            let tail = resp.ua.match(/Edg\/[\d.]+/);
-            if (!tail) tail = resp.ua.match(/(Chrome|Firefox)\/[\d.]+/);
-            debugLog("UA rotated: " + (tail ? "…" + tail[0] : "…" + resp.ua.slice(-30)));
             state.progress.lastUA = resp.ua;
             persistSoon();
             return resolve(resp.ua);
@@ -1374,7 +1092,6 @@
           resolve(null);
         });
       } catch (e) {
-        debugLog("UA rotate exception: " + e.message);
         resolve(null);
       }
     });
@@ -1419,7 +1136,6 @@
         const btn = qs(SEL.moreOptions);
         if (!btn) throw new Error("more-options button not found");
         btn.click();
-        debugLog("more-options clicked");
       }
     },
     {
@@ -1429,7 +1145,6 @@
       action: async () => {
         const btn = qs(SEL.reportChannel) || findClickable(REPORT_CHANNEL_PATTERNS, document, BLOCK_EXCLUDE_PATTERNS);
         if (!btn) throw new Error("report channel button not found");
-        debugLog(`report-channel btn: ${describeButton(btn)}`);
         btn.click();
       }
     },
@@ -1440,7 +1155,6 @@
       action: async () => {
         const btn = findFileReportButton();
         if (!btn) throw new Error("file-a-report button not found");
-        debugLog(`file-report btn: ${describeButton(btn)}`);
         btn.click();
       }
     },
@@ -1454,7 +1168,6 @@
       action: async () => {
         const ct = CONTENT_TYPES.find((c) => c.label === state.settings.content) || CONTENT_TYPES[0];
         const labels = getContentLabels(ct.label);
-        debugLog(`content-type: "${ct.label}" (slug="${ct.slug}", i18n labels=${labels.length})`);
         await pickRadio("content-select-radio-group", ct.slug, labels);
         await clickNext();
       }
@@ -1474,21 +1187,15 @@
         if (!r || !wizard) throw new Error("reason state invalid");
 
         const labels = getReasonLabels(parentName);
-        debugLog(`reason: "${parentName}" (slug="${r.slug}", i18n labels=${labels.length})`);
 
         if (r.slug && clickRadioBySlug("reason-select-radio-group", r.slug, wizard)) {
-          debugLog(`reason clicked directly by slug: ${parentName}`);
           state.usedSearchReason = false;
           await clickNext(); return;
         }
         if (clickRadioByAnyLabel("reason-select-radio-group", labels, wizard)) {
-          debugLog(`reason clicked by label: ${parentName}`);
           state.usedSearchReason = false;
           await clickNext(); return;
         }
-
-        dumpWizardRadios("reason-select-radio-group", wizard);
-        debugLog(`reason "${parentName}" has no direct radio — using Search`);
 
         if (!clickRadioBySlug("reason-select-radio-group", "searching-other", wizard) &&
             !clickRadioByAnyLabel("reason-select-radio-group",
@@ -1496,7 +1203,6 @@
               wizard)) {
           throw new Error(`Search radio not found (reason="${parentName}")`);
         }
-        debugLog("Search radio clicked");
         state.usedSearchReason = true;
         await clickNext();
       }
@@ -1520,8 +1226,6 @@
         const slug = subToSlug(target);
         const labels = sub ? getSubLabels(sub) : getReasonLabels(state.settings.reason);
 
-        debugLog(`search-pick: target="${target}" slug="${slug}" i18n labels=${labels.length}`);
-
         const wantedRadio = () => {
           if (slug) {
             const candidates = [
@@ -1543,27 +1247,19 @@
         const appears = await waitForInterruptible(wantedRadio, 4000, 120);
         if (appears) {
           if (clickRadioBySlug("reason-search-radio-group", slug, wizard)) {
-            debugLog(`search result clicked by slug "${slug}"`);
             await clickNext(); return;
           }
         }
 
         if (clickRadioByAnyLabel("reason-search-radio-group", labels, wizard)) {
-          debugLog(`search result clicked by i18n label "${labels[0]}"`);
           await clickNext(); return;
         }
 
         const all = wizard.querySelectorAll('input[name="reason-search-radio-group"]');
         if (all.length === 0) {
-          debugLog(`search-pick: no search results rendered (target="${target}")`);
           throw new Error(`no search results rendered (target="${target}")`);
         }
-        dumpWizardRadios("reason-search-radio-group", wizard);
-        const first = all[0];
-        const lbl = first.closest("label") ||
-          wizard.querySelector(`label[for="${CSS.escape(first.id)}"]`);
-        const txt = ((lbl?.textContent || "") || first.id || "").trim();
-        throw new Error(`search result not matched (slug="${slug}", labels="${labels.join("|")}"). first result was "${txt}"`);
+        throw new Error(`search result not matched (slug="${slug}")`);
       }
     },
     {
@@ -1583,7 +1279,6 @@
         if (!state.settings.subreason) throw new Error("reason requires a detailed reason");
         const slug = subToSlug(state.settings.subreason);
         const labels = getSubLabels(state.settings.subreason);
-        debugLog(`detailed-reason: "${state.settings.subreason}" (slug="${slug}", i18n labels=${labels.length})`);
         await pickRadio("detailed-reason-select-radio", slug, labels);
         await clickNext();
       }
@@ -1629,7 +1324,6 @@
   async function runStep(step, ctx) {
     state.currentStep = step.name;
     updateProgressUI();
-    debugLog(`→ step "${step.name}" — waiting for screen "${step.screen}"`);
 
     const challenge = detectChallenge();
     if (challenge) throw new ChallengeError(challenge);
@@ -1637,32 +1331,20 @@
     const detected = await waitForInterruptible(() => step.detect(), ctx.timeoutMs, 150);
     if (!state.running) return;
     if (detected === null) {
-      debugLog(`  step "${step.name}" — detect() timed out after ${ctx.timeoutMs}ms`);
-      try {
-        const wizard = getWizard();
-        if (wizard) {
-          const title = wizard.querySelector("h1, h2, h3, [role='heading']");
-          debugLog(`  wizard title: "${(title?.textContent || "").trim().slice(0, 80)}"`);
-        }
-        debugLog(`  url: ${location.pathname}`);
-      } catch {}
       throw new StepTimeoutError(step, ctx.timeoutMs);
     }
-    if (detected === "skipped") { debugLog(`  step "${step.name}" — skipped`); return; }
+    if (detected === "skipped") return;
 
     const challenge2 = detectChallenge();
     if (challenge2) throw new ChallengeError(challenge2);
 
-    debugLog(`  step "${step.name}" — detected, delay ${ctx.delayMs}ms`);
     const ok = await sleepInterruptible(ctx.delayMs);
     if (!ok) return;
 
     const challenge3 = detectChallenge();
     if (challenge3) throw new ChallengeError(challenge3);
 
-    debugLog(`  step "${step.name}" — acting`);
     await step.action();
-    debugLog(`  step "${step.name}" — done`);
   }
 
   async function runStepWithRetries(step, ctx) {
@@ -1670,22 +1352,16 @@
     while (state.running) {
       try { await runStep(step, ctx); return; }
       catch (e) {
-        if (e instanceof ChallengeError) {
-          debugLog(`  ✖ challenge "${e.kind}" during step "${step.name}"`);
-          throw e;
-        }
+        if (e instanceof ChallengeError) throw e;
         if (!(e instanceof StepTimeoutError)) throw e;
         attempt++;
-        debugLog(`  ✖ step "${step.name}" timeout (attempt ${attempt}/${ctx.maxRetries})`);
         if (attempt >= ctx.maxRetries) throw e;
-        debugLog(`  ↻ retrying step "${step.name}"`);
         await sleepInterruptible(500);
       }
     }
   }
 
   async function scheduleResumeAndReload(failedStep) {
-    debugLog(`⚠ failsafe: reloading page and restarting wizard (failed step: ${failedStep})`);
     await chrome.storage.local.set({
       [K_RESUME]: true,
       [K_TARGET]: state.targetChannel || getCurrentChannel()
@@ -1701,24 +1377,13 @@
       maxRetries: state.settings.maxRetries
     };
 
-    debugLog(`lang hint: html lang="${document.documentElement.getAttribute("lang") || "?"}" nav lang="${navigator.language || "?"}"`);
-
     while (state.running) {
       if (state.settings.cycleLimit > 0 &&
           state.progress.cycleCount >= state.settings.cycleLimit) {
-        debugLog(`✔ cycle limit reached (${state.progress.cycleCount}/${state.settings.cycleLimit})`);
         setStatus("cycle limit reached — press 'reset cycles' or raise limit", "err");
         try {
-          chrome.runtime.sendMessage({ type: "RESET_LANGUAGE_EN" }, (resp) => {
-            if (chrome.runtime.lastError) {
-              debugLog("reset-language failed: " + chrome.runtime.lastError.message);
-            } else if (resp && resp.ok) {
-              debugLog("language reset to en-US (DNR) after cycles finished");
-            }
-          });
-        } catch (e) {
-          debugLog("reset-language exception: " + e.message);
-        }
+          chrome.runtime.sendMessage({ type: "RESET_LANGUAGE_EN" }, () => {});
+        } catch (e) {}
         return;
       }
 
@@ -1729,8 +1394,6 @@
       state.progress.cycleCount++;
       persistSoon();
       updateProgressUI();
-      const limitLabel = state.settings.cycleLimit === 0 ? "∞" : String(state.settings.cycleLimit);
-      debugLog(`▶ starting cycle ${state.progress.cycleCount}/${limitLabel} on /${state.targetChannel || "?"}`);
 
       await rotateUA();
       state.currentLine = pickDescriptionLine();
@@ -1744,7 +1407,6 @@
         catch (e) {
           if (e instanceof ChallengeError) {
             state.challengeStrikes++;
-            debugLog(`✖ challenge "${e.kind}" on step "${step.name}" (strike ${state.challengeStrikes})`);
             if (state.challengeStrikes >= 2) {
               setStatus(`challenge detected twice — stopping`, "err");
               await scheduleResumeAndReload(step.name);
@@ -1755,11 +1417,9 @@
             continue;
           }
           if (e instanceof StepTimeoutError && state.settings.reloadOnFail) {
-            debugLog(`✖ step "${step.name}" failed all retries — failsafe`);
             await scheduleResumeAndReload(step.name);
             return;
           }
-          debugLog(`✖ step "${step.name}" fatal: ${e.message}`);
           throw e;
         }
       }
@@ -1768,8 +1428,6 @@
       if (!state.running) return;
       const stillHere = await ensureBackOnChannel();
       if (!stillHere) return;
-
-      debugLog(`✔ cycle ${state.progress.cycleCount} complete`);
     }
   }
 
@@ -1791,9 +1449,6 @@
       state.progress.usedLines = [];
       persistSoon();
       updateProgressUI();
-      debugLog("start (manual) — cycles reset to 0, variants reset");
-    } else {
-      debugLog(`start (auto-resume) — continuing from cycle ${state.progress.cycleCount}`);
     }
 
     state.running = true;
@@ -1804,7 +1459,6 @@
       if (state.running) setStatus("done.", "ok");
     } catch (e) {
       setStatus("error: " + e.message, "err");
-      err(e);
     } finally {
       state.running = false;
       updateUI();
@@ -1815,7 +1469,6 @@
   function stopRun(reason = "user") {
     if (!state.running) return;
     state.running = false;
-    debugLog(`■ stop requested (${reason})`);
     setStatus("stopped by " + reason);
     updateUI();
   }
@@ -1881,9 +1534,6 @@
           <button class="tsr-btn tsr-btn-ghost" id="tsr-reset-cycles">reset cycles</button>
         </div>
         <div class="tsr-buttons">
-          <label class="tsr-muted"><input type="checkbox" id="tsr-debug-toggle" /> debug</label>
-        </div>
-        <div class="tsr-buttons">
           <button class="tsr-btn tsr-btn-ghost" id="tsr-dashboard">open dashboard</button>
         </div>
         <div class="tsr-progress" id="tsr-progress">cycle 0/10 — idle</div>
@@ -1910,7 +1560,6 @@
     const runBtn      = $("tsr-run");
     const stopBtn     = $("tsr-stop");
     const resetCycBtn = $("tsr-reset-cycles");
-    const debugToggle = $("tsr-debug-toggle");
     const dashBtn     = $("tsr-dashboard");
     const collapseBtn = $("tsr-collapse");
     const resizeHandle = panel.querySelector(".tsr-resize-handle");
@@ -1959,7 +1608,6 @@
     timeoutEl.value  = state.settings.timeoutMs;
     retriesEl.value  = state.settings.maxRetries;
     cyclesEl.value   = state.settings.cycleLimit;
-    debugToggle.checked = state.settings.debug !== false;
 
     function refreshFileInfo() {
       const variants = parseDescriptionLines(state.settings.descriptionText || "");
@@ -2003,11 +1651,6 @@
       return n;
     });
 
-    debugToggle.addEventListener("change", (e) => {
-      state.settings.debug = e.target.checked;
-      persistSoon();
-    });
-
     reasonFile.addEventListener("change", () => {
       const file = reasonFile.files && reasonFile.files[0];
       if (!file) return;
@@ -2019,10 +1662,8 @@
         persistSoon();
         refreshFileInfo();
         updateProgressUI();
-        const count = parseDescriptionLines(text).length;
-        debugLog(`.reports file loaded: ${file.name} (${count} variant(s))`);
       };
-      reader.onerror = () => { debugLog(".reports file read failed"); };
+      reader.onerror = () => {};
       reader.readAsText(file);
     });
 
@@ -2033,7 +1674,6 @@
       persistSoon();
       refreshFileInfo();
       updateProgressUI();
-      debugLog(".reports file cleared");
     });
 
     collapseBtn.addEventListener("click", () => {
@@ -2041,33 +1681,22 @@
       collapseBtn.textContent = panel.classList.contains("tsr-collapsed") ? "▸" : "▾";
     });
 
-    runBtn.addEventListener("click", () => {
-      debugLog("run button clicked — cycles will reset");
-      startRun(false);
-    });
+    runBtn.addEventListener("click", () => { startRun(false); });
     stopBtn.addEventListener("click", () => stopRun("user"));
 
     resetCycBtn.addEventListener("click", async () => {
       state.progress.cycleCount = 0;
       state.progress.usedLines = [];
-      // usedEmails НЕ сбрасываем — уникальность email сохраняется между прогонами.
       await persistNow();
       updateProgressUI();
       setStatus("cycle counter reset", "ok");
-      debugLog("cycle counter reset (usedEmails preserved)");
     });
 
     dashBtn.addEventListener("click", () => {
-      debugLog("open dashboard requested");
-      let urlHint = "?";
-      try { urlHint = chrome.runtime.getURL("options.html"); } catch { /* ignore */ }
-      debugLog("dashboard url: " + urlHint);
-
       try {
         chrome.runtime.sendMessage({ type: "OPEN_DASHBOARD" }, (resp) => {
           if (chrome.runtime.lastError) {
             const m = chrome.runtime.lastError.message || "send failed";
-            debugLog("open dashboard failed: " + m);
             setStatus("dashboard error: " + m, "err");
             return;
           }
@@ -2075,25 +1704,17 @@
             const where = resp.tabId
               ? ("tab " + resp.tabId)
               : (resp.windowId ? ("window " + resp.windowId) : "tab");
-            debugLog("dashboard opened in " + where);
             setStatus("dashboard opened (" + where + ")", "ok");
             return;
           }
           const errMsg = resp && resp.error ? resp.error : "unknown";
-          debugLog("dashboard open error: " + errMsg);
           setStatus("dashboard error: " + errMsg, "err");
 
           if (resp && resp.url) {
-            try {
-              window.open(resp.url, "_blank");
-              debugLog("fallback: window.open(" + resp.url + ")");
-            } catch (e2) {
-              debugLog("fallback window.open failed: " + e2.message);
-            }
+            try { window.open(resp.url, "_blank"); } catch {}
           }
         });
       } catch (e) {
-        debugLog("sendMessage exception: " + e.message);
         setStatus("dashboard error: " + e.message, "err");
       }
     });
@@ -2105,7 +1726,6 @@
     panel._refs = { runBtn, stopBtn };
     updateUI();
     updateProgressUI();
-    debugLog("panel built (run enabled=" + !runBtn.disabled + ")");
   }
 
   function setStatus(msg, kind = "") {
@@ -2114,7 +1734,6 @@
     el.textContent = msg;
     el.classList.remove("tsr-ok", "tsr-err");
     if (kind) el.classList.add(kind);
-    debugLog("status: " + msg);
   }
 
   function updateProgressUI() {
@@ -2206,9 +1825,8 @@
         panel.style.top  = p.top + "px";
         if (typeof p.width === "number")  panel.style.width  = p.width + "px";
         if (typeof p.height === "number") panel.style.height = p.height + "px";
-        debugLog("position restored");
       }
-    } catch (e) { warn(e); }
+    } catch (e) {}
   }
 
   const observer = new MutationObserver(() => {
@@ -2216,14 +1834,10 @@
   });
 
   async function init() {
-    debugLog("init (incognito=" + IS_INCOGNITO + ") lang=" + detectLanguageHint());
     await loadAll();
 
     const stale = document.getElementById(PANEL_ID);
-    if (stale) {
-      debugLog("removing stale panel (likely from previous extension context)");
-      stale.remove();
-    }
+    if (stale) stale.remove();
 
     buildPanel();
     observer.observe(document.documentElement, { childList: true, subtree: true });
@@ -2235,19 +1849,17 @@
       autoResume = r[K_RESUME] === true;
       savedTarget = r[K_TARGET] || null;
       if (autoResume) await chrome.storage.local.set({ [K_RESUME]: false });
-    } catch (e) { warn("resume check failed", e); }
+    } catch (e) {}
 
     if (!autoResume) return;
 
     const cur = getCurrentChannel();
     if (savedTarget && cur !== savedTarget) {
-      debugLog(`resume: navigation to /${savedTarget} required (current /${cur || "?"})`);
       await chrome.storage.local.set({ [K_RESUME]: true, [K_TARGET]: savedTarget });
       location.href = `https://www.twitch.tv/${savedTarget}`;
       return;
     }
 
-    debugLog(`auto-resume: settling ${RESUME_SETTLE_MS}ms then starting`);
     state.targetChannel = savedTarget || cur;
     setTimeout(() => startRun(true), RESUME_SETTLE_MS);
   }
